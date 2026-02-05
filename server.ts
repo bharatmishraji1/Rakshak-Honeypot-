@@ -11,7 +11,8 @@ app.use(cors());
 const PORT = process.env.PORT || 8080;
 const AUTH_KEY = "RAKSHAK_H_2026"; // Ye key submission mein dena
 
-app.post("/honeypot", async (req, res) => {
+
+app.post(["/honeypot", "/honeypot/"], async (req, res) => {
     // 1. Auth check (Secured with user-provided API key)
     if (req.headers['x-api-key'] !== AUTH_KEY) {
         return res.status(401).json({ error: "Unauthorized access" });
@@ -52,3 +53,4 @@ app.post("/honeypot", async (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Rakshak API Ready on Port ${PORT}`);
 });
+
