@@ -1,7 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { GoogleGenerativeAI } from "@google/generative-ai";
 
 dotenv.config();
 const app = express();
@@ -9,11 +8,7 @@ app.use(express.json());
 app.use(cors());
 
 const PORT = process.env.PORT || 8080;
-const AUTH_KEY = "RAKSHAK_H_2026"; 
-
-// --- DHYAN SE DEKHO: Railway Dashboard wala naam 'GOOGLE_API_KEY' hai ---
-const API_KEY = process.env.API_KEY || "";
-const genAI = new GoogleGenerativeAI(API_KEY);
+const AUTH_KEY = process.env.AUTH_KEY || "RAKSHAK_H_2026"; 
 
 app.post("/honeypot", async (req, res) => {
     // 1. Auth check
@@ -23,10 +18,33 @@ app.post("/honeypot", async (req, res) => {
 
     try {
         const { message, history } = req.body;
-        // Poori conversation ko ek sath jodo taaki context mile
-        const fullChat = (history || []).map((h: any) => h.content).join(" ") + " " + (message || "");
+        console.log("📩 NEW REQUEST RECEIVED!");
+        console.log("📝 Scammer Message:", message);
 
-        // --- 2. SMART EXTRACTION LOGIC (YAHAN PASTE HUA HAI) ---
+        // --- 2. OPENROUTER AI CALL (Dynamic Response) ---
+        // Railway dashboard mein tune 'API_KEY' rakha hai
+        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${process.env.API_KEY}`,
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://railway.app" 
+            },
+            body: JSON.stringify({
+                "model": "google/gemini-2.0-flash-001", 
+                "messages": [
+                    { "role": "system", "content": "You are a victim. Be curious and cooperative but slightly slow." },
+                    { "role": "user", "content": message }
+                ]
+            })
+        });
+
+        const data: any = await response.json();
+        const aiReply = data.choices ? data.choices[0].message.content : "AI is currently offline...";
+        console.log("🤖 AI Reply:", aiReply);
+
+        // --- 3. SMART EXTRACTION LOGIC ---
+        const fullChat = (history || []).map((h: any) => h.content).join(" ") + " " + (message || "");
         const upiRegex = /[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}/g;
         const phoneRegex = /(\+91[\-\s]?)?[0]?(91)?[6789]\d{9}/g;
         const urlRegex = /(https?:\/\/[^\s]+)/g;
@@ -35,37 +53,29 @@ app.post("/honeypot", async (req, res) => {
         const extractedPhone = fullChat.match(phoneRegex) || [];
         const extractedUrls = fullChat.match(urlRegex) || [];
 
-        // Dynamic Detection: Agar kuch suspicious mila tabhi true hoga
         const isScam = extractedUpi.length > 0 || extractedUrls.length > 0 || extractedPhone.length > 0;
 
-        // --- 3. DYNAMIC REPORT GENERATION ---
-        const report = {
-            "scam_detected": isScam, 
+        // --- 4. FINAL OUTPUT (Buildathon Schema) ---
+        res.json({
+            "scam_detected": isScam,
             "scam_type": isScam ? "financial_fraud" : "normal_conversation",
             "confidence_score": isScam ? 0.98 : 0.05,
+            "agent_response": aiReply,
             "extracted_entities": {
                 "upi_ids": [...new Set(extractedUpi)],
                 "bank_accounts": [],
                 "phone_numbers": [...new Set(extractedPhone)],
                 "urls": [...new Set(extractedUrls)]
             },
-            "conversation_summary": isScam ? "Suspicious entities detected." : "Safe interaction."
-        };
-
-        // --- 4. FINAL OUTPUT (Buildathon Schema) ---
-        res.json({
-            "scam_detected": report.scam_detected,
-            "scam_type": report.scam_type,
-            "confidence_score": report.confidence_score,
-            "agent_response": "I am analyzing the safety of this interaction.", 
-            "extracted_entities": report.extracted_entities,
-            "conversation_summary": report.conversation_summary
+            "conversation_summary": isScam ? "Suspicious entities detected." : "Safe interaction analyzed."
         });
 
-    } catch (error) {
-        console.error("Critical Error:", error);
+    } catch (error: any) {
+        console.error("❌ Critical Error:", error.message);
         res.status(500).json({ error: "Intelligence extraction failed." });
     }
 });
 
-
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Rakshak API Ready on Port ${PORT}`);
+});
