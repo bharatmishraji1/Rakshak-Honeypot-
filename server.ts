@@ -11,7 +11,7 @@ app.use(cors());
 const PORT = process.env.PORT || 8080;
 const AUTH_KEY = "RAKSHAK_H_2026"; 
 
-// Railway Dashboard se 'GOOGLE_API_KEY' uthayega
+// Dashboard se 'GOOGLE_API_KEY' uthayega
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || "");
 
 app.post("/honeypot", async (req, res) => {
@@ -24,7 +24,7 @@ app.post("/honeypot", async (req, res) => {
         const { message, history } = req.body;
         console.log("📩 NEW REQUEST RECEIVED!");
 
-        // --- 2. ASLI GOOGLE GEMINI CALL ---
+        // --- GOOGLE GEMINI CALL ---
         const model = genAI.getGenerativeModel({ 
             model: "gemini-1.5-flash",
             systemInstruction: "You are a victim. Be curious and cooperative but slightly slow." 
@@ -34,7 +34,7 @@ app.post("/honeypot", async (req, res) => {
         const aiReply = result.response.text().trim();
         console.log("🤖 Gemini Reply:", aiReply);
 
-        // --- 3. EXTRACTION LOGIC ---
+        // --- EXTRACTION LOGIC ---
         const fullChat = (history || []).map((h: any) => h.content).join(" ") + " " + (message || "");
         const upiRegex = /[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}/g;
         const phoneRegex = /(\+91[\-\s]?)?[0]?(91)?[6789]\d{9}/g;
@@ -43,7 +43,7 @@ app.post("/honeypot", async (req, res) => {
         const extractedPhone = fullChat.match(phoneRegex) || [];
         const isScam = extractedUpi.length > 0 || extractedPhone.length > 0;
 
-        // --- 4. HACKATHON FINAL OUTPUT ---
+        // --- HACKATHON OUTPUT ---
         res.json({
             "scam_detected": isScam,
             "scam_type": isScam ? "financial_fraud" : "normal_conversation",
