@@ -8,27 +8,9 @@ app.use(express.json());
 app.use(cors());
 
 const PORT = process.env.PORT || 8080;
-const AUTH_KEY = process.env.AUTH_KEY || "RAKSHAK_H_2026"; //
+const AUTH_KEY = process.env.AUTH_KEY || "RAKSHAK_H_2026"; 
 
-// --- APNI API SE BAAT KARO ---
-        const response = await fetch("TUMHARA_API_ENDPOINT_URL", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${process.env.YOUR_API_KEY}`, // Railway se key uthayega
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                model: "model-name", // Jo bhi model tum use kar rahe ho
-                messages: [{ role: "user", content: message }]
-            })
-        });
-
-        const data = await response.json();
-        
-        // Check karo ki data sahi format mein aaya ya nahi
-        const aiReply = data.choices ? data.choices[0].message.content : "AI offline hai...";
-
-        console.log("🤖 AI Reply:", aiReply);
+app.post("/honeypot", async (req, res) => {
     // 1. Auth check
     if (req.headers['x-api-key'] !== AUTH_KEY) {
         return res.status(401).json({ error: "Unauthorized access" });
@@ -36,43 +18,48 @@ const AUTH_KEY = process.env.AUTH_KEY || "RAKSHAK_H_2026"; //
 
     try {
         const { message, history } = req.body;
-        // Poori conversation ko ek sath jodo taaki context mile
-        const fullChat = (history || []).map((h: any) => h.content).join(" ") + " " + (message || "");
+        console.log("📩 NEW REQUEST RECEIVED!");
+        console.log("📝 Message Content:", message);
 
-        // --- 2. SMART EXTRACTION LOGIC (YAHAN PASTE HUA HAI) ---
+        // --- 2. ASLI API CALL (Isse dynamic reply aayega) ---
+        const aiResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${process.env.YOUR_API_KEY}`, // Railway dashboard se key lega
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                model: "google/gemini-2.0-flash-001", 
+                messages: [{ role: "user", content: message }]
+            })
+        });
+
+        const data: any = await aiResponse.json();
+        const aiReply = data.choices ? data.choices[0].message.content : "AI offline hai...";
+        console.log("🤖 AI Reply:", aiReply);
+
+        // --- 3. EXTRACTION LOGIC ---
+        const fullChat = (history || []).map((h: any) => h.content).join(" ") + " " + (message || "");
         const upiRegex = /[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}/g;
         const phoneRegex = /(\+91[\-\s]?)?[0]?(91)?[6789]\d{9}/g;
-        const urlRegex = /(https?:\/\/[^\s]+)/g;
-
+        
         const extractedUpi = fullChat.match(upiRegex) || [];
         const extractedPhone = fullChat.match(phoneRegex) || [];
-        const extractedUrls = fullChat.match(urlRegex) || [];
+        const isScam = extractedUpi.length > 0 || extractedPhone.length > 0;
 
-        // Dynamic Detection: Agar kuch suspicious mila tabhi true hoga
-        const isScam = extractedUpi.length > 0 || extractedUrls.length > 0 || extractedPhone.length > 0;
-
-        // --- 3. DYNAMIC REPORT GENERATION ---
-        const report = {
-            "scam_detected": isScam, 
+        // --- 4. FINAL OUTPUT (Buildathon Schema) ---
+        res.json({
+            "scam_detected": isScam,
             "scam_type": isScam ? "financial_fraud" : "normal_conversation",
             "confidence_score": isScam ? 0.98 : 0.05,
+            "agent_response": aiReply, // Ab ye dynamic hai!
             "extracted_entities": {
                 "upi_ids": [...new Set(extractedUpi)],
                 "bank_accounts": [],
                 "phone_numbers": [...new Set(extractedPhone)],
-                "urls": [...new Set(extractedUrls)]
+                "urls": []
             },
             "conversation_summary": isScam ? "Suspicious entities detected." : "Safe interaction."
-        };
-
-        // --- 4. FINAL OUTPUT (Buildathon Schema) ---
-        res.json({
-            "scam_detected": report.scam_detected,
-            "scam_type": report.scam_type,
-            "confidence_score": report.confidence_score,
-            "agent_response": "I am analyzing the safety of this interaction.", 
-            "extracted_entities": report.extracted_entities,
-            "conversation_summary": report.conversation_summary
         });
 
     } catch (error) {
@@ -82,10 +69,5 @@ const AUTH_KEY = process.env.AUTH_KEY || "RAKSHAK_H_2026"; //
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Rakshak API Ready on Port ${PORT}`); //
+    console.log(`🚀 Rakshak API Ready on Port ${PORT}`);
 });
-
-
-
-
-
