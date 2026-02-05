@@ -12,7 +12,8 @@ const PORT = process.env.PORT || 8080;
 const AUTH_KEY = "RAKSHAK_H_2026"; 
 
 // Dashboard se 'GOOGLE_API_KEY' uthayega
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || "");
+const API_KEY = process.env.GOOGLE_API_KEY || "";
+const genAI = new GoogleGenerativeAI(API_KEY);
 
 app.post("/honeypot", async (req, res) => {
     // 1. Auth check
@@ -20,11 +21,17 @@ app.post("/honeypot", async (req, res) => {
         return res.status(401).json({ error: "Unauthorized access" });
     }
 
+    // Key missing check
+    if (!API_KEY) {
+        console.error("❌ ERROR: GOOGLE_API_KEY is missing in Railway Dashboard!");
+        return res.status(500).json({ error: "Server Configuration Error: Key missing." });
+    }
+
     try {
         const { message, history } = req.body;
         console.log("📩 NEW REQUEST RECEIVED!");
 
-        // --- GOOGLE GEMINI CALL ---
+        // --- GEMINI AI CALL ---
         const model = genAI.getGenerativeModel({ 
             model: "gemini-1.5-flash",
             systemInstruction: "You are a victim. Be curious and cooperative but slightly slow." 
