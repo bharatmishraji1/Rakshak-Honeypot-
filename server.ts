@@ -49,4 +49,6 @@ app.post("/honeypot", async (req, res) => {
 });
 
 
-app.listen(PORT, () => console.log(`🚀 Rakshak API Ready on Port ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Rakshak API Ready on Port ${PORT}`);
+});
