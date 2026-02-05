@@ -1,0 +1,27 @@
+{
+  "name": "rakshak-h:-ai-scam-honeypot",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "ts-node server.ts",
+    "dev": "vite",
+    "build": "tsc && vite build"
+  },
+  "dependencies": {
+    "@google/genai": "^1.39.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "lucide-react": "^0.563.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}

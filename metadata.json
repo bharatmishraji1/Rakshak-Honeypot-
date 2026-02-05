@@ -1,0 +1,5 @@
+{
+  "name": "Rakshak-H: AI Scam Honeypot",
+  "description": "An autonomous AI-powered scam honeypot and cyber-intelligence dashboard designed to engage fraudsters, protect users, and extract actionable intelligence like UPI IDs and phishing links.",
+  "requestFramePermissions": []
+}
