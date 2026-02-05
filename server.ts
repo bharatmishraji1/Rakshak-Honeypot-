@@ -17,51 +17,44 @@ app.post("/honeypot", async (req, res) => {
     }
 
     try {
-        const { message } = req.body;
+        const { message, history } = req.body;
+        // Poori conversation ko ek sath jodo taaki context mile
+        const fullChat = (history || []).map((h: any) => h.content).join(" ") + " " + (message || "");
 
-        // 2. OpenRouter API Call (Using your new key sk-or-v1...)
-        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${process.env.API_KEY}`, //
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                "model": "google/gemini-flash-1.5-8b",
-                "messages": [{ "role": "user", "content": message }]
-            })
-        });
+        // --- 2. SMART EXTRACTION LOGIC (YAHAN PASTE HUA HAI) ---
+        const upiRegex = /[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}/g;
+        const phoneRegex = /(\+91[\-\s]?)?[0]?(91)?[6789]\d{9}/g;
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
 
-        const data = await response.json();
-        const aiReply = data.choices?.[0]?.message?.content || "Engaged scammer.";
+        const extractedUpi = fullChat.match(upiRegex) || [];
+        const extractedPhone = fullChat.match(phoneRegex) || [];
+        const extractedUrls = fullChat.match(urlRegex) || [];
 
-        // 3. Tera Schema Logic (Fixed typo 'repo' to 'report')
+        // Dynamic Detection: Agar kuch suspicious mila tabhi true hoga
+        const isScam = extractedUpi.length > 0 || extractedUrls.length > 0 || extractedPhone.length > 0;
+
+        // --- 3. DYNAMIC REPORT GENERATION ---
         const report = {
-            scam_detected: true,
-            scam_type: "financial_fraud",
-            confidence_score: 0.95,
-            extracted_entities: {
-                upi_ids: [],
-                bank_accounts: [],
-                phone_numbers: [],
-                urls: []
+            "scam_detected": isScam, 
+            "scam_type": isScam ? "financial_fraud" : "normal_conversation",
+            "confidence_score": isScam ? 0.98 : 0.05,
+            "extracted_entities": {
+                "upi_ids": [...new Set(extractedUpi)],
+                "bank_accounts": [],
+                "phone_numbers": [...new Set(extractedPhone)],
+                "urls": [...new Set(extractedUrls)]
             },
-            conversation_summary: "Engaged scammer and extracted intelligence."
+            "conversation_summary": isScam ? "Suspicious entities detected." : "Safe interaction."
         };
 
-        // 4. FINAL OUTPUT (Strictly following Buildathon schema)
+        // --- 4. FINAL OUTPUT (Buildathon Schema) ---
         res.json({
-            "scam_detected": report.scam_detected || true,
-            "scam_type": report.scam_type || "financial_fraud",
-            "confidence_score": report.confidence_score || 0.95,
-            "agent_response": aiReply, 
-            "extracted_entities": {
-                "upi_ids": report.extracted_entities?.upi_ids || [],
-                "bank_accounts": report.extracted_entities?.bank_accounts || [],
-                "phone_numbers": report.extracted_entities?.phone_numbers || [],
-                "urls": report.extracted_entities?.urls || []
-            },
-            "conversation_summary": report.conversation_summary || "Engaged scammer and extracted intelligence."
+            "scam_detected": report.scam_detected,
+            "scam_type": report.scam_type,
+            "confidence_score": report.confidence_score,
+            "agent_response": "I am analyzing the safety of this interaction.", 
+            "extracted_entities": report.extracted_entities,
+            "conversation_summary": report.conversation_summary
         });
 
     } catch (error) {
@@ -73,3 +66,4 @@ app.post("/honeypot", async (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Rakshak API Ready on Port ${PORT}`); //
 });
+
