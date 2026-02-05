@@ -58,45 +58,30 @@ app.post("/honeypot", async (req, res) => {
         const data: any = await response.json();
         const aiReply = data.choices ? data.choices[0].message.content : "[DELAY: 1 min] Connection error, trying again...";
 
-// --- 3. PRO-LEVEL EXTRACTION & WEIGHTED SCORING ---
+        // --- 4. EXTRACTION LOGIC ---
         const fullChat = (history || []).map((h: any) => h.content).join(" ") + " " + (message || "");
-        
-        // RegEx patterns
         const upiRegex = /[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}/g;
         const phoneRegex = /(\+91[\-\s]?)?[0]?(91)?[6789]\d{9}/g;
         const urlRegex = /(https?:\/\/[^\s]+)/g;
 
-        const extractedUpi = [...new Set(fullChat.match(upiRegex) || [])];
-        const extractedPhone = [...new Set(fullChat.match(phoneRegex) || [])];
-        const extractedUrls = [...new Set(urlRegex.test(fullChat) ? fullChat.match(urlRegex) : [])];
+        const extractedUpi = fullChat.match(upiRegex) || [];
+        const extractedPhone = fullChat.match(phoneRegex) || [];
+        const extractedUrls = fullChat.match(urlRegex) || [];
+        const isScam = extractedUpi.length > 0 || extractedUrls.length > 0 || extractedPhone.length > 0;
 
-        // --- 🏆 WEIGHTED ACCURACY SCORE ---
-        // Judges ko dikhane ke liye ki hum har entity ko alag weight de rahe hain
-        let score = 0.0;
-        
-        if (extractedUpi.length > 0) score += 0.50;   // Sabse bada saboot (UPI)
-        if (extractedUrls.length > 0) score += 0.25;  // Links (Phishing risk)
-        if (extractedPhone.length > 0) score += 0.15; // Phone (Contact harvest)
-        if (fullChat.length > 100) score += 0.09;    // Conversation depth bonus
-
-        const finalConfidence = Math.min(score + 0.01, 0.99); // Base adjustment
-        const isScam = finalConfidence > 0.45;
-
-        // --- 4. HACKATHON READY RESPONSE ---
+        // --- 5. HACKATHON JSON OUTPUT ---
         res.json({
             "scam_detected": isScam,
             "scam_type": isScam ? "financial_fraud" : "normal_conversation",
-            "confidence_score": parseFloat(finalConfidence.toFixed(2)), 
-            "agent_response": aiReply, // Tera Rakshak-H prompt wala natural reply
+            "confidence_score": isScam ? 0.98 : 0.05,
+            "agent_response": aiReply,
             "extracted_entities": {
-                "upi_ids": extractedUpi,
-                "bank_accounts": [], // Ise empty rakho jab tak bank details na milein
-                "phone_numbers": extractedPhone,
-                "urls": extractedUrls
+                "upi_ids": [...new Set(extractedUpi)],
+                "bank_accounts": [],
+                "phone_numbers": [...new Set(extractedPhone)],
+                "urls": [...new Set(extractedUrls)]
             },
-            "conversation_summary": isScam 
-                ? `High risk detected. Identified ${extractedUpi.length} UPI ID(s) and ${extractedUrls.length} suspicious link(s).` 
-                : "Conversation analyzed: No immediate threat detected."
+            "conversation_summary": isScam ? "Active intelligence extraction." : "Monitoring for fraud."
         });
 
     } catch (error) {
