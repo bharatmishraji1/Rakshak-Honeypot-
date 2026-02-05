@@ -10,22 +10,25 @@ app.use(cors());
 const PORT = process.env.PORT || 8080;
 const AUTH_KEY = process.env.AUTH_KEY || "RAKSHAK_H_2026"; //
 
-app.post("/honeypot", async (req, res) => {
-    console.log("📩 NEW REQUEST RECEIVED!");
-    console.log("📝 Message Content:", req.body.message);
-    // 1. Purani hardcoded line ko HATAO:
-// const aiReply = "I am looking into this..."; <-- DELETE THIS
+// --- APNI API SE BAAT KARO ---
+        const response = await fetch("TUMHARA_API_ENDPOINT_URL", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${process.env.YOUR_API_KEY}`, // Railway se key uthayega
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                model: "model-name", // Jo bhi model tum use kar rahe ho
+                messages: [{ role: "user", content: message }]
+            })
+        });
 
-// 2. Asli AI logic (Gemini/OpenRouter) USE KARO:
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-const result = await model.generateContent(message); // User ka message bhej rahe hain
-const response = await result.response;
+        const data = await response.json();
+        
+        // Check karo ki data sahi format mein aaya ya nahi
+        const aiReply = data.choices ? data.choices[0].message.content : "AI offline hai...";
 
-// 3. Ye hai tumhara ASLI DYNAMIC REPLY
-const aiReply = response.text(); 
-
-// 4. Ab ise logs mein print karo
-console.log("🤖 AI Reply to Scammer:", aiReply);
+        console.log("🤖 AI Reply:", aiReply);
     // 1. Auth check
     if (req.headers['x-api-key'] !== AUTH_KEY) {
         return res.status(401).json({ error: "Unauthorized access" });
@@ -81,6 +84,7 @@ console.log("🤖 AI Reply to Scammer:", aiReply);
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Rakshak API Ready on Port ${PORT}`); //
 });
+
 
 
 
