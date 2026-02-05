@@ -51,11 +51,11 @@ app.post("*", async (req, res) => {
         console.error("Critical Error:", error);
         res.status(500).json({ error: "Intelligence extraction failed." });
     }
-});
 
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Rakshak API Ready on Port ${PORT}`);
 });
+
 
 
