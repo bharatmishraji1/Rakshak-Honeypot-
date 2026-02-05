@@ -11,14 +11,19 @@ const PORT = process.env.PORT || 8080;
 const AUTH_KEY = "RAKSHAK_H_2026"; 
 
 app.post("/honeypot", async (req, res) => {
-    // 1. Auth check
+    // 1. API Key Check (x-api-key header mein honi chahiye)
     if (req.headers['x-api-key'] !== AUTH_KEY) {
         return res.status(401).json({ error: "Unauthorized access" });
     }
 
     try {
-        const { message, history } = req.body;
-        console.log("📩 REQUEST RECEIVED: ", message);
+        // Judges ka naya format: message.text
+        const { message, conversationHistory } = req.body;
+        const scammerText = message?.text || "";
+
+        if (!scammerText) {
+            return res.status(400).json({ status: "failed", error: "No message text provided" });
+        }
 
         // --- 2. DYNAMIC SYSTEM PROMPT (Your Exact Logic) ---
         const systemPrompt = `
@@ -95,3 +100,4 @@ app.post("/honeypot", async (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Rakshak-H Updated Format Ready`);
 });
+
