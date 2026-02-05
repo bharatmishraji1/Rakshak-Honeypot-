@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-  "start": "tsx server.ts",
-  "build": "tsc"
-},
+    "start": "tsx server.ts",
+    "build": "tsc"
+  },
   "dependencies": {
     "@google/genai": "^1.39.0",
     "cors": "^2.8.6",
@@ -14,7 +14,8 @@
     "express": "^5.2.1",
     "lucide-react": "^0.563.0",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "tsx": "^4.21.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
