@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { rakshak } from './services/geminiService.ts'; 
+import { rakshak } from './services/geminiService.js'; 
 
 dotenv.config();
 const app = express();
@@ -47,5 +47,6 @@ app.post("/honeypot", async (req, res) => {
         res.status(500).json({ error: "Intelligence extraction failed." });
     }
 });
+
 
 app.listen(PORT, () => console.log(`🚀 Rakshak API Ready on Port ${PORT}`));
