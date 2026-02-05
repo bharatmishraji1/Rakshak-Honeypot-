@@ -11,10 +11,12 @@ app.use(cors());
 const PORT = process.env.PORT || 8080;
 const AUTH_KEY = "RAKSHAK_H_2026"; 
 
-// Dashboard mein tune 'GOOGLE_API_KEY' rakha hai
+// --- EK DUM SAHI KEY NAME ---
+// Railway Dashboard mein tune 'GOOGLE_API_KEY' rakha hai
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || "");
 
 app.post("/honeypot", async (req, res) => {
+    // 1. Auth check
     if (req.headers['x-api-key'] !== AUTH_KEY) {
         return res.status(401).json({ error: "Unauthorized access" });
     }
@@ -22,19 +24,18 @@ app.post("/honeypot", async (req, res) => {
     try {
         const { message, history } = req.body;
         console.log("📩 NEW REQUEST RECEIVED!");
-        console.log("📝 Message Content:", message);
 
-        // --- GOOGLE GEMINI CALL ---
+        // --- 2. GEMINI AI CALL ---
         const model = genAI.getGenerativeModel({ 
             model: "gemini-1.5-flash",
             systemInstruction: "You are a victim. Be curious and cooperative but slightly slow." 
         });
 
-        const result = await model.generateContent(message);
+        const result = await model.generateContent(message || "Hello");
         const aiReply = result.response.text().trim();
-        console.log("🤖 AI Reply:", aiReply);
+        console.log("🤖 Gemini Reply:", aiReply);
 
-        // --- EXTRACTION LOGIC ---
+        // --- 3. EXTRACTION LOGIC ---
         const fullChat = (history || []).map((h: any) => h.content).join(" ") + " " + (message || "");
         const upiRegex = /[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}/g;
         const phoneRegex = /(\+91[\-\s]?)?[0]?(91)?[6789]\d{9}/g;
@@ -43,7 +44,7 @@ app.post("/honeypot", async (req, res) => {
         const extractedPhone = fullChat.match(phoneRegex) || [];
         const isScam = extractedUpi.length > 0 || extractedPhone.length > 0;
 
-        // --- FINAL HACKATHON OUTPUT ---
+        // --- 4. HACKATHON OUTPUT ---
         res.json({
             "scam_detected": isScam,
             "scam_type": isScam ? "financial_fraud" : "normal_conversation",
@@ -55,11 +56,11 @@ app.post("/honeypot", async (req, res) => {
                 "phone_numbers": [...new Set(extractedPhone)],
                 "urls": []
             },
-            "conversation_summary": isScam ? "Suspicious entities detected." : "Safe interaction."
+            "conversation_summary": isScam ? "Suspicious activity detected." : "Safe interaction."
         });
 
     } catch (error) {
-        console.error("Critical Error:", error);
+        console.error("❌ Gemini API Error:", error);
         res.status(500).json({ error: "Intelligence extraction failed." });
     }
 });
