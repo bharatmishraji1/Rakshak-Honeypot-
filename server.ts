@@ -10,15 +10,12 @@ app.use(cors());
 const PORT = process.env.PORT || 8080;
 const AUTH_KEY = "RAKSHAK_H_2026"; 
 
-// --- MANDATORY CALLBACK FUNCTION ---
 async function sendFinalResultToGUVI(sessionId: string, extraction: any, historyCount: number) {
-
-    // --- YE BOX LOGS MEIN DIKHEGA ---
+    // Ye logs tumhe Railway par dikhenge
     console.log("\n" + "=".repeat(40));
     console.log(`🚨 SCAMMER EVIDENCE FOR: ${sessionId}`);
     console.log(`UPI IDs: ${extraction.upi_ids.join(", ") || "None"}`);
     console.log(`Bank A/Cs: ${extraction.bank_accounts.join(", ") || "None"}`);
-    console.log(`Links: ${extraction.urls.join(", ") || "None"}`);
     console.log("=".repeat(40) + "\n");
     
     const payload = {
@@ -43,26 +40,20 @@ async function sendFinalResultToGUVI(sessionId: string, extraction: any, history
         });
         console.log(`✅ Reported to GUVI: ${sessionId}`);
     } catch (err) {
-        console.error("❌ GUVI Callback Failed:", err);
+        console.error("❌ GUVI Callback Failed");
     }
 }
 
 app.post("/honeypot", async (req, res) => {
-    // 1. API Key Check (x-api-key header mein honi chahiye)
     if (req.headers['x-api-key'] !== AUTH_KEY) {
         return res.status(401).json({ error: "Unauthorized access" });
     }
 
     try {
-        // Judges ka naya format: message.text
-        const { message, conversationHistory } = req.body;
+        const { sessionId, message, conversationHistory } = req.body;
         const scammerText = message?.text || "";
 
-        if (!scammerText) {
-            return res.status(400).json({ status: "failed", error: "No message text provided" });
-        }
-
-        // --- 2. DYNAMIC SYSTEM PROMPT (Your Exact Logic) ---
+        // --- 1. AI REPLY LOGIC ---
         const systemPrompt = `
         You are Rakshak-H, an ethical AI-based honeypot agent for scam detection and fraud intelligence extraction.
         Your purpose is to keep scammers engaged safely, delay them, and extract actionable scam-related information (UPI IDs, bank accounts, URLs, scam logic).
@@ -97,8 +88,6 @@ app.post("/honeypot", async (req, res) => {
         - DELAY TAG: Every response must start with a [DELAY: X min] tag (e.g., [DELAY: 2 min]).
         - TONE: Curious (not desperate), Cooperative (not obedient), Slightly slow (not reactive).
         `;
-
-        // --- 3. OPENROUTER AI CALL ---
         const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
             headers: {
@@ -121,23 +110,32 @@ app.post("/honeypot", async (req, res) => {
         const data: any = await response.json();
         const aiReply = data.choices ? data.choices[0].message.content : "[DELAY: 1 min] Network slow hai.";
 
-        // --- 4. NEW OFFICIAL OUTPUT FORMAT (CRITICAL) ---
-        // Judges ko ab sirf ye do fields chahiye:
+        // --- 2. THE EXTRACTION PART (Adding this for you) ---
+        const fullContext = (scammerText + " " + (conversationHistory || []).map((h: any) => h.text).join(" ")).toLowerCase();
+        
+        const extraction = {
+            upi_ids: [...new Set(fullContext.match(/[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}/g) || [])],
+            phone_numbers: [...new Set(fullContext.match(/(\+91[\-\s]?)?[0]?(91)?[6789]\d{9}/g) || [])],
+            urls: [...new Set(fullContext.match(/(https?:\/\/[^\s]+)/g) || [])],
+            bank_accounts: [...new Set(fullContext.match(/\b\d{9,18}\b/g) || [])]
+        };
+
+        // --- 3. TRIGGER CALLBACK IF SCAM DETECTED ---
+        if (extraction.upi_ids.length > 0 || extraction.bank_accounts.length > 0 || extraction.urls.length > 0) {
+            sendFinalResultToGUVI(sessionId, extraction, conversationHistory?.length || 0);
+        }
+
+        // --- 4. OFFICIAL OUTPUT FORMAT ---
         res.json({
             "status": "success",
             "reply": aiReply
         });
 
     } catch (error) {
-        console.error("Critical Error:", error);
-        res.status(500).json({ error: "Intelligence extraction failed." });
+        res.status(500).json({ error: "Internal Server Error" });
     }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Rakshak-H Updated Format Ready`);
 });
-
-
-
-
