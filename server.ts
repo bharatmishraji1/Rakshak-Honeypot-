@@ -11,8 +11,7 @@ app.use(cors());
 const PORT = process.env.PORT || 8080;
 const AUTH_KEY = "RAKSHAK_H_2026"; 
 
-// --- EK DUM SAHI KEY NAME ---
-// Railway Dashboard mein tune 'GOOGLE_API_KEY' rakha hai
+// Railway Dashboard se 'GOOGLE_API_KEY' uthayega
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || "");
 
 app.post("/honeypot", async (req, res) => {
@@ -25,7 +24,7 @@ app.post("/honeypot", async (req, res) => {
         const { message, history } = req.body;
         console.log("📩 NEW REQUEST RECEIVED!");
 
-        // --- 2. GEMINI AI CALL ---
+        // --- 2. ASLI GOOGLE GEMINI CALL ---
         const model = genAI.getGenerativeModel({ 
             model: "gemini-1.5-flash",
             systemInstruction: "You are a victim. Be curious and cooperative but slightly slow." 
@@ -44,7 +43,7 @@ app.post("/honeypot", async (req, res) => {
         const extractedPhone = fullChat.match(phoneRegex) || [];
         const isScam = extractedUpi.length > 0 || extractedPhone.length > 0;
 
-        // --- 4. HACKATHON OUTPUT ---
+        // --- 4. HACKATHON FINAL OUTPUT ---
         res.json({
             "scam_detected": isScam,
             "scam_type": isScam ? "financial_fraud" : "normal_conversation",
