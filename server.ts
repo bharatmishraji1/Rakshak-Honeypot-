@@ -13,6 +13,13 @@ const AUTH_KEY = process.env.AUTH_KEY || "RAKSHAK_H_2026"; //
 app.post("/honeypot", async (req, res) => {
     console.log("📩 NEW REQUEST RECEIVED!");
     console.log("📝 Message Content:", req.body.message);
+    // --- 1. AI Logic (Gemini/OpenRouter call) ---
+        // Yahan tumhara pehle wala AI call logic rahega
+        const aiReply = "I am looking into this, please wait..."; // Is variable mein AI ka reply aata hai
+
+        // --- 2. YE HAI MAIN LINE (REPLY DEKHNE KE LIE) ---
+        console.log("🤖 AI Reply to Scammer:", aiReply); 
+        console.log("-----------------------");
     // 1. Auth check
     if (req.headers['x-api-key'] !== AUTH_KEY) {
         return res.status(401).json({ error: "Unauthorized access" });
@@ -68,5 +75,6 @@ app.post("/honeypot", async (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Rakshak API Ready on Port ${PORT}`); //
 });
+
 
 
