@@ -8,7 +8,7 @@ app.use(express.json());
 app.use(cors());
 
 const PORT = process.env.PORT || 8080;
-const AUTH_KEY = process.env.AUTH_KEY || "RAKSHAK_H_2026"; 
+const AUTH_KEY = "RAKSHAK_H_2026"; 
 
 app.post("/honeypot", async (req, res) => {
     // 1. Auth check
@@ -21,21 +21,27 @@ app.post("/honeypot", async (req, res) => {
         console.log("📩 NEW REQUEST RECEIVED!");
         console.log("📝 Message Content:", message);
 
-        // --- 2. ASLI API CALL (Isse dynamic reply aayega) ---
-        const aiResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        // --- 2. DYNAMIC AI CALL (OpenRouter) ---
+        // Yahan 'fetch' route ke andar hona chahiye
+        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
             headers: {
-                "Authorization": `Bearer ${process.env.YOUR_API_KEY}`, // Railway dashboard se key lega
+                "Authorization": `Bearer ${process.env.YOUR_API_KEY}`, // Railway Dashboard mein 'YOUR_API_KEY' check karo
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
                 model: "google/gemini-2.0-flash-001", 
-                messages: [{ role: "user", content: message }]
+                messages: [
+                    { role: "system", content: "You are a victim. Be curious and cooperative but slightly slow." },
+                    { role: "user", content: message }
+                ]
             })
         });
 
-        const data: any = await aiResponse.json();
-        const aiReply = data.choices ? data.choices[0].message.content : "AI offline hai...";
+        const data: any = await response.json();
+        
+        // AI reply extract karo, agar fail ho toh dummy reply mat dena
+        const aiReply = data.choices ? data.choices[0].message.content : "Hmm, I am not sure about that...";
         console.log("🤖 AI Reply:", aiReply);
 
         // --- 3. EXTRACTION LOGIC ---
@@ -47,12 +53,12 @@ app.post("/honeypot", async (req, res) => {
         const extractedPhone = fullChat.match(phoneRegex) || [];
         const isScam = extractedUpi.length > 0 || extractedPhone.length > 0;
 
-        // --- 4. FINAL OUTPUT (Buildathon Schema) ---
+        // --- 4. FINAL OUTPUT ---
         res.json({
             "scam_detected": isScam,
             "scam_type": isScam ? "financial_fraud" : "normal_conversation",
             "confidence_score": isScam ? 0.98 : 0.05,
-            "agent_response": aiReply, // Ab ye dynamic hai!
+            "agent_response": aiReply,
             "extracted_entities": {
                 "upi_ids": [...new Set(extractedUpi)],
                 "bank_accounts": [],
