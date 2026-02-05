@@ -11,7 +11,8 @@ app.use(cors());
 const PORT = process.env.PORT || 8080;
 const AUTH_KEY = "RAKSHAK_H_2026"; 
 
-// Dashboard se 'GOOGLE_API_KEY' uthayega
+// --- KEY MATCHING ---
+// Railway Dashboard wale name se match hona chahiye
 const API_KEY = process.env.GOOGLE_API_KEY || "";
 const genAI = new GoogleGenerativeAI(API_KEY);
 
@@ -21,17 +22,20 @@ app.post("/honeypot", async (req, res) => {
         return res.status(401).json({ error: "Unauthorized access" });
     }
 
-    // Key missing check
-    if (!API_KEY) {
-        console.error("❌ ERROR: GOOGLE_API_KEY is missing in Railway Dashboard!");
-        return res.status(500).json({ error: "Server Configuration Error: Key missing." });
-    }
-
     try {
         const { message, history } = req.body;
         console.log("📩 NEW REQUEST RECEIVED!");
 
-        // --- GEMINI AI CALL ---
+        // Agar key missing hai toh error handle karo
+        if (!API_KEY) {
+             return res.json({
+                "scam_detected": false,
+                "agent_response": "Configuration Error: API Key missing in Railway Dashboard.",
+                "extracted_entities": { "upi_ids": [], "phone_numbers": [] }
+            });
+        }
+
+        // --- ASLI GOOGLE GEMINI CALL ---
         const model = genAI.getGenerativeModel({ 
             model: "gemini-1.5-flash",
             systemInstruction: "You are a victim. Be curious and cooperative but slightly slow." 
@@ -50,7 +54,7 @@ app.post("/honeypot", async (req, res) => {
         const extractedPhone = fullChat.match(phoneRegex) || [];
         const isScam = extractedUpi.length > 0 || extractedPhone.length > 0;
 
-        // --- HACKATHON OUTPUT ---
+        // --- FINAL HACKATHON OUTPUT ---
         res.json({
             "scam_detected": isScam,
             "scam_type": isScam ? "financial_fraud" : "normal_conversation",
