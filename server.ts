@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 8080;
 const AUTH_KEY = "RAKSHAK_H_2026"; 
 
 // --- DHYAN SE DEKHO: Railway Dashboard wala naam 'GOOGLE_API_KEY' hai ---
-const API_KEY = process.env.GOOGLE_API_KEY || "";
+const API_KEY = process.env.API_KEY || "";
 const genAI = new GoogleGenerativeAI(API_KEY);
 
 app.post("/honeypot", async (req, res) => {
@@ -67,4 +67,5 @@ app.post("/honeypot", async (req, res) => {
         res.status(500).json({ error: "Intelligence extraction failed." });
     }
 });
+
 
