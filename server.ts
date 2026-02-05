@@ -12,6 +12,15 @@ const AUTH_KEY = "RAKSHAK_H_2026";
 
 // --- MANDATORY CALLBACK FUNCTION ---
 async function sendFinalResultToGUVI(sessionId: string, extraction: any, historyCount: number) {
+
+    // --- YE BOX LOGS MEIN DIKHEGA ---
+    console.log("\n" + "=".repeat(40));
+    console.log(`🚨 SCAMMER EVIDENCE FOR: ${sessionId}`);
+    console.log(`UPI IDs: ${extraction.upi_ids.join(", ") || "None"}`);
+    console.log(`Bank A/Cs: ${extraction.bank_accounts.join(", ") || "None"}`);
+    console.log(`Links: ${extraction.urls.join(", ") || "None"}`);
+    console.log("=".repeat(40) + "\n");
+    
     const payload = {
         "sessionId": sessionId,
         "scamDetected": true,
@@ -128,6 +137,7 @@ app.post("/honeypot", async (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Rakshak-H Updated Format Ready`);
 });
+
 
 
 
