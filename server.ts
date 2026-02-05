@@ -13,13 +13,19 @@ const AUTH_KEY = process.env.AUTH_KEY || "RAKSHAK_H_2026"; //
 app.post("/honeypot", async (req, res) => {
     console.log("📩 NEW REQUEST RECEIVED!");
     console.log("📝 Message Content:", req.body.message);
-    // --- 1. AI Logic (Gemini/OpenRouter call) ---
-        // Yahan tumhara pehle wala AI call logic rahega
-        const aiReply = "I am looking into this, please wait..."; // Is variable mein AI ka reply aata hai
+    // 1. Purani hardcoded line ko HATAO:
+// const aiReply = "I am looking into this..."; <-- DELETE THIS
 
-        // --- 2. YE HAI MAIN LINE (REPLY DEKHNE KE LIE) ---
-        console.log("🤖 AI Reply to Scammer:", aiReply); 
-        console.log("-----------------------");
+// 2. Asli AI logic (Gemini/OpenRouter) USE KARO:
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+const result = await model.generateContent(message); // User ka message bhej rahe hain
+const response = await result.response;
+
+// 3. Ye hai tumhara ASLI DYNAMIC REPLY
+const aiReply = response.text(); 
+
+// 4. Ab ise logs mein print karo
+console.log("🤖 AI Reply to Scammer:", aiReply);
     // 1. Auth check
     if (req.headers['x-api-key'] !== AUTH_KEY) {
         return res.status(401).json({ error: "Unauthorized access" });
@@ -75,6 +81,7 @@ app.post("/honeypot", async (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Rakshak API Ready on Port ${PORT}`); //
 });
+
 
 
 
