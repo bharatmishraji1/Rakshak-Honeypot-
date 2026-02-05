@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 dotenv.config();
 const app = express();
@@ -9,6 +10,9 @@ app.use(cors());
 
 const PORT = process.env.PORT || 8080;
 const AUTH_KEY = "RAKSHAK_H_2026"; 
+
+// Railway dashboard mein tune 'GOOGLE_API_KEY' rakha hai
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || "");
 
 app.post("/honeypot", async (req, res) => {
     // 1. Auth check
@@ -21,56 +25,48 @@ app.post("/honeypot", async (req, res) => {
         console.log("📩 NEW REQUEST RECEIVED!");
         console.log("📝 Message Content:", message);
 
-        // --- 2. DYNAMIC AI CALL (OpenRouter) ---
-        // Yahan 'fetch' route ke andar hona chahiye
-        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${process.env.YOUR_API_KEY}`, // Railway Dashboard mein 'YOUR_API_KEY' check karo
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                model: "google/gemini-2.0-flash-001", 
-                messages: [
-                    { role: "system", content: "You are a victim. Be curious and cooperative but slightly slow." },
-                    { role: "user", content: message }
-                ]
-            })
+        // --- 2. ASLI GOOGLE AI CALL ---
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-1.5-flash",
+            // Ye instructions bot ko convincing banati hain
+            systemInstruction: "You are a victim. Be curious and cooperative but slightly slow. Never sound investigative. Ask at most one question per turn." 
         });
 
-        const data: any = await response.json();
-        
-        // AI reply extract karo, agar fail ho toh dummy reply mat dena
-        const aiReply = data.choices ? data.choices[0].message.content : "Hmm, I am not sure about that...";
+        const result = await model.generateContent(message);
+        const aiReply = result.response.text().trim();
         console.log("🤖 AI Reply:", aiReply);
 
-        // --- 3. EXTRACTION LOGIC ---
+        // --- 3. SMART EXTRACTION LOGIC ---
         const fullChat = (history || []).map((h: any) => h.content).join(" ") + " " + (message || "");
         const upiRegex = /[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}/g;
         const phoneRegex = /(\+91[\-\s]?)?[0]?(91)?[6789]\d{9}/g;
-        
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+
         const extractedUpi = fullChat.match(upiRegex) || [];
         const extractedPhone = fullChat.match(phoneRegex) || [];
-        const isScam = extractedUpi.length > 0 || extractedPhone.length > 0;
+        const extractedUrls = fullChat.match(urlRegex) || [];
 
-        // --- 4. FINAL OUTPUT ---
+        // Dynamic Detection: Agar entities milin tabhi scam true hoga
+        const isScam = extractedUpi.length > 0 || extractedUrls.length > 0 || extractedPhone.length > 0;
+
+        // --- 4. FINAL OUTPUT (Hackathon Schema) ---
         res.json({
             "scam_detected": isScam,
             "scam_type": isScam ? "financial_fraud" : "normal_conversation",
             "confidence_score": isScam ? 0.98 : 0.05,
-            "agent_response": aiReply,
+            "agent_response": aiReply, // Dynamic Gemini Response
             "extracted_entities": {
                 "upi_ids": [...new Set(extractedUpi)],
                 "bank_accounts": [],
                 "phone_numbers": [...new Set(extractedPhone)],
-                "urls": []
+                "urls": [...new Set(extractedUrls)]
             },
-            "conversation_summary": isScam ? "Suspicious entities detected." : "Safe interaction."
+            "conversation_summary": isScam ? "Suspicious entities detected in chat." : "Safe interaction analyzed."
         });
 
     } catch (error) {
         console.error("Critical Error:", error);
-        res.status(500).json({ error: "Intelligence extraction failed." });
+        res.status(500).json({ error: "Intelligence extraction failed. Check API Key." });
     }
 });
 
