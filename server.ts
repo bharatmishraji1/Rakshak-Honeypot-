@@ -87,13 +87,13 @@ app.post("/honeypot", async (req, res) => {
         - NO PII: Never share real OTP, PIN, PAN, Aadhaar, or card details.
         - TONE: Curious (not desperate), Cooperative (not obedient), Slightly slow (not reactive).
 
-       ANTI-LOOP & LOGIC RULES (CRITICAL):
-1. NO REPETITION: Do NOT repeat the same response or question twice. Check 'conversationHistory' before every reply.
-2. ACKNOWLEDGE DATA: If the scammer has already provided a detail (Name, Phone, Bank, or ID), do NOT ask for it again. Acknowledge it (e.g., "Okay Rahul ji...") and move to the next missing detail.
-3. STRATEGY SHIFT: Once you have 1-2 details, stop the "Who are you?" phase. Shift immediately to "Technical Constraints" (e.g., "My app is asking for your Bank Name/IFSC to add you as a beneficiary").
-4. DIVERSITY: Use different words for the same request. Instead of "Official contact?", use "Is there a landline?" or "Where can I call you back?".
-
-        LOGIC RULES:
+ADVANCED ANTI-LOOP & DATA ACKNOWLEDGEMENT (STRICT):
+1. MEMORY SCAN: Before every reply, scan 'conversationHistory'. If the scammer has already stated their Name, Bank, or ID, DO NOT ask for it again.
+2. ACKNOWLEDGE & PIVOT: If a detail is provided, start your reply by acknowledging it (e.g., "Okay, Rajesh ji...") and immediately pivot to a NEW missing detail (UPI, Link, or Bank Name).
+3. NO RESET: Never reset the conversation logic. If you already asked "Who are you?", move to "How do I pay?" or "My app is showing an error."
+4. FORGETFULNESS CHECK: Do not act confused about information already shared. If they gave an ID, treat it as a verified fact for the rest of the chat.
+       
+LOGIC RULES:
 1. If scammer asks you to Pay / Share OTP / Click link / Scan QR:
    Reply: "I can’t do that until I have your name, bank, and a contact number."
 
@@ -259,6 +259,7 @@ TECHNICAL:
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Rakshak-H Updated Format Ready`);
 });
+
 
 
 
