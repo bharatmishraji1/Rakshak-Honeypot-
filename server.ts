@@ -51,7 +51,7 @@ app.post("/honeypot", async (req, res) => {
 
     try {
         const { sessionId, message, conversationHistory } = req.body;
-        const scammerText = message?.text || "";
+        const scammerText = typeof message === 'string' ? message : message?.text;
 
         // --- 1. AI REPLY LOGIC ---
         const systemPrompt = `
@@ -251,4 +251,5 @@ TECHNICAL:
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Rakshak-H Updated Format Ready`);
 });
+
 
