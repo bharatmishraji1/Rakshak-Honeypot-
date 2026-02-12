@@ -273,44 +273,54 @@ app.post("/honeypot", async (req, res) => {
     // 1. AI se reply lo (useJsonFormat hamesha false rakho chatting ke liye)
     const rawAiReply = await callAI(aiMessages, false);
 
-    // --- 🛡️ ANTI-JSON SAFETY FILTER ---
-    // Agar Gemini galti se chat mein JSON ugal de, toh ye use saaf kar dega.
-    let cleanReply = rawAiReply;
-    if (cleanReply.includes("{") || cleanReply.includes("```")) {
-        // Sirf pehla natural sentence rakho, baaki JSON block uda do
-        cleanReply = cleanReply.split("{")[0].replace(/```json[\s\S]*?```/g, "").trim();
+    // --- 🛡️ ADVANCED MULTI-LINGUAL SAFETY FILTER ---
+let cleanReply = rawAiReply;
+
+// 1. Harsh Cleaning: Agar JSON, Markdown ya Brackets dikhein toh sab uda do
+if (/[\{\[\]\`]/.test(cleanReply)) {
+    // Sirf natural text rakho jo in symbols se pehle hai
+    cleanReply = cleanReply.split('{')[0].split('[')[0].split('`')[0].trim();
+}
+
+// 2. Language-Aware Fallbacks: Agar filter ke baad reply empty ho jaye
+if (cleanReply.length < 5) {
+    const fallbacks = {
+        hindi: [
+            "Rukiye, mujhe chashma dhoondhne dijiye.",
+            "Net bahut dheema hai, thoda waqt lagega.",
+            "Phone hang ho raha hai, ek minute rukiye."
+        ],
+        hinglish: [
+            "Wait, net bahut slow hai mera.",
+            "Phone lag ho raha hai, messages nahi khul rahe.",
+            "Ek minute, app update ho rahi hai shayad."
+        ],
+        english: [
+            "Wait, my connection is very unstable.",
+            "The app is lagging, please stay online.",
+            "Give me a moment, checking the details now."
+        ]
+    };
+
+    // Scammer ki language ke hisaab se fallback set karo
+    const lowerScammerText = scammerText.toLowerCase();
+    let selectedLang = 'hinglish'; // Default
+
+    // Simple script detection
+    if (/[ऀ-ॿ]/.test(scammerText)) {
+        selectedLang = 'hindi';
+    } else if (/(\b(the|is|and|please|wait)\b)/i.test(scammerText)) {
+        // Agar common English words hain toh English use karo
+        selectedLang = 'english';
     }
-    
-    // Agar filter ke baad reply bahut chota ya khali ho jaye, toh fallback line bhej do
-    if (cleanReply.length < 5) {
-        cleanReply = "Net thoda slow hai, main check karke batata hoon.";
-    }
 
-    // --- SMART EXTRACTION LOGIC ---
-    const exitScenarios = ["official office", "authorities directly", "person at the center", "offline now"];
-    const isExit = exitScenarios.some(s => cleanReply.toLowerCase().includes(s));
-    
-    // Report trigger check
-    const shouldReport = (isExit || conversationHistory.length >= 25) && !reportedSessions.has(sessionId);
+    // Randomly ek bahana pick karo
+    const options = fallbacks[selectedLang];
+    cleanReply = options[Math.floor(Math.random() * options.length)];
+}
 
-    if (shouldReport) {
-      reportedSessions.add(sessionId);
-      sessionTimestamps.set(sessionId, Date.now());
-
-      // Extraction ke liye context taiyar karo
-      const recentHistory = conversationHistory.slice(-20);
-      const fullContext = scammerText + " " + recentHistory.map((h) => h.text).join(" ");
-
-      // Background mein report bhejo (Fire-and-forget)
-      extractSmartIntelligence(fullContext, sessionId)
-        .then(intel => {
-          if (intel) sendFinalResultToGUVI(sessionId, intel, conversationHistory.length + 1);
-        })
-        .catch(err => console.error(`❌ Background extraction error for ${sessionId}:`, err.message));
-    }
-
-    // Scammer ko hamesha 'cleanReply' hi bhejna
-    res.json({ status: "success", reply: cleanReply });
+// 3. Final Output (Strictly Clean)
+res.json({ status: "success", reply: cleanReply });
 
   } catch (error) {
     console.error("❌ Honeypot error:", error.message);
@@ -341,6 +351,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🔐 Auth: ${AUTH_KEY === "RAKSHAK_H_2026" ? "⚠️ DEFAULT KEY (set AUTH_KEY env var!)" : "✅ Custom key"}`);
   console.log(`🤖 Model: ${AI_MODEL}`);
 });
+
 
 
 
