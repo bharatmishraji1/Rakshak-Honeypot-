@@ -270,22 +270,38 @@ app.post("/honeypot", async (req, res) => {
       { role: "user", content: scammerText },
     ];
 
-    const aiReply = await callAI(aiMessages);
+    // 1. AI se reply lo (useJsonFormat hamesha false rakho chatting ke liye)
+    const rawAiReply = await callAI(aiMessages, false);
+
+    // --- 🛡️ ANTI-JSON SAFETY FILTER ---
+    // Agar Gemini galti se chat mein JSON ugal de, toh ye use saaf kar dega.
+    let cleanReply = rawAiReply;
+    if (cleanReply.includes("{") || cleanReply.includes("```")) {
+        // Sirf pehla natural sentence rakho, baaki JSON block uda do
+        cleanReply = cleanReply.split("{")[0].replace(/```json[\s\S]*?```/g, "").trim();
+    }
+    
+    // Agar filter ke baad reply bahut chota ya khali ho jaye, toh fallback line bhej do
+    if (cleanReply.length < 5) {
+        cleanReply = "Net thoda slow hai, main check karke batata hoon.";
+    }
 
     // --- SMART EXTRACTION LOGIC ---
     const exitScenarios = ["official office", "authorities directly", "person at the center", "offline now"];
-    const isExit = exitScenarios.some(s => aiReply.toLowerCase().includes(s));
+    const isExit = exitScenarios.some(s => cleanReply.toLowerCase().includes(s));
+    
+    // Report trigger check
     const shouldReport = (isExit || conversationHistory.length >= 25) && !reportedSessions.has(sessionId);
 
     if (shouldReport) {
       reportedSessions.add(sessionId);
       sessionTimestamps.set(sessionId, Date.now());
 
-      // Truncate context to avoid token overflow
+      // Extraction ke liye context taiyar karo
       const recentHistory = conversationHistory.slice(-20);
       const fullContext = scammerText + " " + recentHistory.map((h) => h.text).join(" ");
 
-      // Fire-and-forget but with error handling
+      // Background mein report bhejo (Fire-and-forget)
       extractSmartIntelligence(fullContext, sessionId)
         .then(intel => {
           if (intel) sendFinalResultToGUVI(sessionId, intel, conversationHistory.length + 1);
@@ -293,7 +309,8 @@ app.post("/honeypot", async (req, res) => {
         .catch(err => console.error(`❌ Background extraction error for ${sessionId}:`, err.message));
     }
 
-    res.json({ status: "success", reply: aiReply });
+    // Scammer ko hamesha 'cleanReply' hi bhejna
+    res.json({ status: "success", reply: cleanReply });
 
   } catch (error) {
     console.error("❌ Honeypot error:", error.message);
@@ -324,5 +341,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🔐 Auth: ${AUTH_KEY === "RAKSHAK_H_2026" ? "⚠️ DEFAULT KEY (set AUTH_KEY env var!)" : "✅ Custom key"}`);
   console.log(`🤖 Model: ${AI_MODEL}`);
 });
+
 
 
