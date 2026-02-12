@@ -45,50 +45,20 @@ function isRateLimited(ip) {
   return entry.count > RATE_LIMIT_MAX;
 }
 
-// --- INPUT VALIDATION ---
 function validateHoneypotInput(body) {
   const errors = [];
+  
+  // Bas check karo ki sessionId aur message hai ya nahi
+  if (!body.sessionId) errors.push("Missing sessionId");
+  if (!body.message) errors.push("Missing message");
 
-  if (!body.sessionId || typeof body.sessionId !== 'string' || body.sessionId.trim().length === 0) {
-    errors.push("sessionId is required and must be a non-empty string");
-  } else if (body.sessionId.length > 100) {
-    errors.push("sessionId must be under 100 characters");
-  }
-
-  if (!body.message) {
-    errors.push("message is required");
-  } else {
-    const text = typeof body.message === 'string' ? body.message : body.message?.text;
-    if (!text || typeof text !== 'string' || text.trim().length === 0) {
-      errors.push("message text must be a non-empty string");
-    } else if (text.length > 5000) {
-      errors.push("message text must be under 5000 characters");
-    }
-  }
-
-  if (body.conversationHistory !== undefined) {
-    if (!Array.isArray(body.conversationHistory)) {
-      errors.push("conversationHistory must be an array");
-    } else if (body.conversationHistory.length > 100) {
-      errors.push("conversationHistory exceeds maximum length of 100");
-    } else {
-      for (let i = 0; i < body.conversationHistory.length; i++) {
-        const h = body.conversationHistory[i];
-        if (!h.text || typeof h.text !== 'string') {
-          errors.push(`conversationHistory[${i}].text must be a string`);
-          break;
-        }
-       if (!h.sender || !['scammer', 'agent', 'honeypot'].includes(h.sender)) {
-          errors.push(`conversationHistory[${i}].sender must be 'scammer' or 'agent'`);
-          break;
-        }
-      }
-    }
+  // History check ko ekdum simple rakho, sender validation hata do
+  if (body.conversationHistory && !Array.isArray(body.conversationHistory)) {
+    errors.push("conversationHistory must be an array");
   }
 
   return errors;
 }
-
 // --- FETCH WITH TIMEOUT ---
 async function fetchWithTimeout(url, options, timeoutMs = AI_TIMEOUT_MS) {
   const controller = new AbortController();
@@ -354,4 +324,5 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🔐 Auth: ${AUTH_KEY === "RAKSHAK_H_2026" ? "⚠️ DEFAULT KEY (set AUTH_KEY env var!)" : "✅ Custom key"}`);
   console.log(`🤖 Model: ${AI_MODEL}`);
 });
+
 
