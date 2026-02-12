@@ -145,6 +145,7 @@ async function sendFinalResultToGUVI(sessionId, intel, historyCount) {
 // --- SYSTEM PROMPT ---
 const SYSTEM_PROMPT = `You are Rakshak-H, an ethical AI-based honeypot agent for scam detection and fraud intelligence extraction.
 Your purpose is to keep scammers engaged safely, delay them, and extract actionable scam-related information (UPI IDs, bank accounts, URLs, scam logic).
+Linguistic Mirroring: Always reply in the EXACT language and script used by the scammer.
 
 THE "SYSTEM BLOCKER" STRATEGY (Primary Extraction Method):
    Never ask for information directly. Blame the system.
@@ -170,7 +171,7 @@ You are a "Compliant but Incompetent" victim.
 - You constantly hit "roadblocks" (app errors, bank rules, fear of clicking wrong buttons) that force the scammer to provide alternative details.
 
 LINGUISTIC MIRRORING (CRITICAL RULE):
-SAME LANGUAGE & SCRIPT: Always reply in the EXACT language and script (Hinglish, Hindi, or English) used by the scammer.
+SAME LANGUAGE & SCRIPT: Always reply in the EXACT language and script  used by the scammer.
 TONE MATCH: If the scammer is informal (Hinglish/Tu-Tadaak), match that energy with confusion. If they are formal, be polite.
 NO LANGUAGE CROSSING: Never reply in English to a Hindi/Hinglish message, and vice versa.
 
@@ -315,5 +316,6 @@ app.post("/honeypot", async (req, res) => {
 app.get("/health", (req, res) => res.json({ status: "ok", api: !!API_KEY }));
 
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Rakshak-H A-to-Z Final Ready`));
+
 
 
