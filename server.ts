@@ -78,7 +78,7 @@ function validateHoneypotInput(body) {
           errors.push(`conversationHistory[${i}].text must be a string`);
           break;
         }
-        if (!h.sender || !['scammer', 'agent'].includes(h.sender)) {
+       if (!h.sender || !['scammer', 'agent', 'honeypot'].includes(h.sender)) {
           errors.push(`conversationHistory[${i}].sender must be 'scammer' or 'agent'`);
           break;
         }
@@ -354,3 +354,4 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🔐 Auth: ${AUTH_KEY === "RAKSHAK_H_2026" ? "⚠️ DEFAULT KEY (set AUTH_KEY env var!)" : "✅ Custom key"}`);
   console.log(`🤖 Model: ${AI_MODEL}`);
 });
+
