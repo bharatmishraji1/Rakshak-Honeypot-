@@ -17,6 +17,7 @@ const AI_TIMEOUT_MS = 30000;
 // --- SESSION TRACKING & CLEANUP ---
 const reportedSessions = new Set();
 const sessionTimestamps = new Map();
+const sessionMemory = new Map(); 
 
 setInterval(() => {
   const cutoff = Date.now() - 3600000;
@@ -240,7 +241,45 @@ app.post("/honeypot", async (req, res) => {
     if (/[\{\[\]\`]/.test(cleanReply)) {
         cleanReply = cleanReply.split('{')[0].split('[')[0].split('`')[0].trim();
     }
-    if (cleanReply.length < 5) cleanReply = "Ruk jao, net thoda slow chal raha hai.";
+    const chatState = sessionMemory.get(sessionId) || { usedExcuses: [] };
+
+    // B. Language detect karo (Scammer ki bhasha ke hisaab se)
+    let currentLang = 'hinglish'; 
+    if (/[ऀ-ॿ]/.test(scammerText)) {
+        currentLang = 'hindi'; // Hindi Script
+    } else if (/(\b(the|is|and|please|wait|account|blocked)\b)/i.test(scammerText)) {
+        currentLang = 'english'; // Professional English
+    }
+
+    // C. Check for Repetition
+    if (chatState.usedExcuses.includes(cleanReply) || cleanReply.length < 5) {
+        
+        const freshStalls = {
+            hindi: [
+                "एक मिनट रुकिए, चश्मा ढूंढ रहा हूँ, बिना चश्मे के कुछ दिख नहीं रहा।",
+                "बैंक का सर्वर डाउन लग रहा है, मैं फिर से कोशिश कर रहा हूँ।",
+                "नेटवर्क का बहुत इशू है यहाँ, मैसेज बहुत धीरे जा रहे हैं।"
+            ],
+            hinglish: [
+                "Ek minute bhaiya, chashma dhoondh raha hoon, bina chashme ke OTP nahi dikh raha.",
+                "Server down dikha raha hai bank ka shayad, main dubara try karta hoon.",
+                "Arre net thoda slow hai aaj, tower mein maintenance chal rahi hai shayad."
+            ],
+            english: [
+                "Please wait a moment, I am looking for my glasses, can't read the code without them.",
+                "The bank server seems to be unresponsive, I am trying to log in again.",
+                "My internet connection is very unstable right now, please stay online."
+            ]
+        };
+
+        const options = freshStalls[currentLang];
+        // Wo bahana uthao jo pehle use NAHI hua
+        cleanReply = options.find(s => !chatState.usedExcuses.includes(s)) || options[0];
+    }
+
+    // D. Diary update karo
+    chatState.usedExcuses.push(cleanReply);
+    sessionMemory.set(sessionId, chatState);
 
     // --- EXTRACTION TRIGGER ---
     const exitScenarios = ["office", "authorities", "bye", "center", "offline"];
@@ -276,4 +315,5 @@ app.post("/honeypot", async (req, res) => {
 app.get("/health", (req, res) => res.json({ status: "ok", api: !!API_KEY }));
 
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Rakshak-H A-to-Z Final Ready`));
+
 
