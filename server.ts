@@ -14,13 +14,12 @@ const API_KEY = process.env.API_KEY;
 const AI_MODEL = process.env.AI_MODEL || "google/gemini-2.0-flash-001";
 const AI_TIMEOUT_MS = 30000;
 
-// --- SESSION TRACKING (Prevents duplicate reports) ---
+// --- SESSION TRACKING & CLEANUP ---
 const reportedSessions = new Set();
 const sessionTimestamps = new Map();
 
-// Cleanup old sessions every 30 minutes
 setInterval(() => {
-  const cutoff = Date.now() - 3600000; // 1 hour
+  const cutoff = Date.now() - 3600000;
   for (const [id, ts] of sessionTimestamps) {
     if (ts < cutoff) {
       reportedSessions.delete(id);
@@ -29,44 +28,36 @@ setInterval(() => {
   }
 }, 1800000);
 
-// --- SIMPLE RATE LIMITER ---
+// --- RATE LIMITER ---
 const rateLimitMap = new Map();
-const RATE_LIMIT_WINDOW = 60000; // 1 minute
-const RATE_LIMIT_MAX = 20; // max requests per window
-
 function isRateLimited(ip) {
   const now = Date.now();
   const entry = rateLimitMap.get(ip);
-  if (!entry || now - entry.start > RATE_LIMIT_WINDOW) {
+  if (!entry || now - entry.start > 60000) {
     rateLimitMap.set(ip, { start: now, count: 1 });
     return false;
   }
   entry.count++;
-  return entry.count > RATE_LIMIT_MAX;
+  return entry.count > 25;
 }
 
+// --- INPUT VALIDATION ---
 function validateHoneypotInput(body) {
   const errors = [];
-  
-  // Bas check karo ki sessionId aur message hai ya nahi
   if (!body.sessionId) errors.push("Missing sessionId");
   if (!body.message) errors.push("Missing message");
-
-  // History check ko ekdum simple rakho, sender validation hata do
   if (body.conversationHistory && !Array.isArray(body.conversationHistory)) {
     errors.push("conversationHistory must be an array");
   }
-
   return errors;
 }
+
 // --- FETCH WITH TIMEOUT ---
 async function fetchWithTimeout(url, options, timeoutMs = AI_TIMEOUT_MS) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-
   try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
-    return response;
+    return await fetch(url, { ...options, signal: controller.signal });
   } finally {
     clearTimeout(timer);
   }
@@ -75,14 +66,8 @@ async function fetchWithTimeout(url, options, timeoutMs = AI_TIMEOUT_MS) {
 // --- SAFE AI CALL ---
 async function callAI(messages, useJsonFormat = false) {
   if (!API_KEY) throw new Error("API_KEY is not configured");
-
-  const body = {
-    model: AI_MODEL,
-    messages,
-  };
-  if (useJsonFormat) {
-    body.response_format = { type: "json_object" };
-  }
+  const body = { model: AI_MODEL, messages };
+  if (useJsonFormat) body.response_format = { type: "json_object" };
 
   const response = await fetchWithTimeout("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
@@ -93,17 +78,7 @@ async function callAI(messages, useJsonFormat = false) {
     body: JSON.stringify(body),
   });
 
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`AI API error [${response.status}]: ${errText}`);
-  }
-
   const data = await response.json();
-
-  if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-    throw new Error(`AI returned unexpected format: ${JSON.stringify(data).slice(0, 200)}`);
-  }
-
   return data.choices[0].message.content;
 }
 
@@ -111,11 +86,8 @@ async function callAI(messages, useJsonFormat = false) {
 async function extractSmartIntelligence(fullContext, sessionId) {
   const prompt = `
     Analyze this scam chat and extract SCAMMER details only.
-    CRITICAL RULE: Ignore any phone/account mentioned as "Your registered number", "Your account", or "On your phone". These are victim/user details. Do NOT extract them.
+    CRITICAL RULE: Ignore any phone/account mentioned as "Your registered number", "Your account", or "On your phone". These are victim details.
     Only extract details the scammer provides for payment, contact, or phishing.
-    
-    Chat: "${fullContext.slice(0, 8000)}"
-
     Return JSON only:
     {
       "upi_ids": [],
@@ -124,43 +96,27 @@ async function extractSmartIntelligence(fullContext, sessionId) {
       "phone_numbers": [],
       "suspicious_keywords": [],
       "agent_notes": ""
-    }`;
+    }
+    Chat: "${fullContext.slice(0, 8000)}"`;
 
   try {
     const content = await callAI([{ role: "system", content: prompt }], true);
     const intel = JSON.parse(content);
-
-    // Validate expected fields exist
-    const requiredFields = ['upi_ids', 'bank_accounts', 'urls', 'phone_numbers', 'suspicious_keywords'];
-    for (const field of requiredFields) {
-      if (!Array.isArray(intel[field])) {
-        intel[field] = [];
-      }
-    }
-    if (typeof intel.agent_notes !== 'string') {
-      intel.agent_notes = "";
-    }
-
-    console.log("\n" + "=".repeat(50));
-    console.log(`🕵️ EXTRACTION | Session: ${sessionId}`);
-    console.log(`📱 Phones: ${intel.phone_numbers.join(", ") || "None"}`);
-    console.log(`💳 Banks:  ${intel.bank_accounts.join(", ") || "None"}`);
-    console.log(`🔗 UPI:    ${intel.upi_ids.join(", ") || "None"}`);
-    console.log(`🌐 URLs:   ${intel.urls.join(", ") || "None"}`);
-    console.log(`🚩 Keys:   ${intel.suspicious_keywords.join(", ") || "None"}`);
-    console.log("=".repeat(50) + "\n");
-
+    
+    // Ensure unique values
+    intel.upi_ids = [...new Set(intel.upi_ids)];
+    intel.phone_numbers = [...new Set(intel.phone_numbers)];
+    
     return intel;
   } catch (e) {
-    console.error(`❌ Extraction failed for ${sessionId}:`, e.message);
     return null;
   }
 }
 
-// --- 2. FINAL PAYLOAD SENDER ---
+// --- 2. FINAL PAYLOAD SENDER (GUVI ENDPOINT) ---
 async function sendFinalResultToGUVI(sessionId, intel, historyCount) {
   const payload = {
-    sessionId,
+    sessionId: sessionId,
     scamDetected: true,
     totalMessagesExchanged: historyCount,
     extractedIntelligence: {
@@ -168,25 +124,20 @@ async function sendFinalResultToGUVI(sessionId, intel, historyCount) {
       upiIds: intel.upi_ids.length > 0 ? intel.upi_ids : ["None"],
       phishingLinks: intel.urls.length > 0 ? intel.urls : ["None"],
       phoneNumbers: intel.phone_numbers.length > 0 ? intel.phone_numbers : ["None"],
-      suspiciousKeywords: intel.suspicious_keywords.length > 0 ? intel.suspicious_keywords : ["urgent", "verify now"],
+      suspiciousKeywords: intel.suspicious_keywords.length > 0 ? intel.suspicious_keywords : ["urgent", "verify now"]
     },
-    agentNotes: intel.agent_notes || "Context-aware extraction successful.",
+    agentNotes: intel.agent_notes || "Intelligence extracted by Rakshak-H honeypot."
   };
 
   try {
-    const response = await fetchWithTimeout("https://hackathon.guvi.in/api/updateHoneyPotFinalResult", {
+    await fetchWithTimeout("https://hackathon.guvi.in/api/updateHoneyPotFinalResult", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }, 15000);
-
-    if (!response.ok) {
-      console.error(`❌ GUVI returned ${response.status} for ${sessionId}`);
-    } else {
-      console.log(`✅ Reported to GUVI: ${sessionId}`);
-    }
+    console.log(`✅ Reported to GUVI: ${sessionId}`);
   } catch (err) {
-    console.error(`❌ GUVI callback failed for ${sessionId}:`, err.message);
+    console.error(`❌ GUVI report failed: ${err.message}`);
   }
 }
 
@@ -239,119 +190,66 @@ TECHNICAL: Output ONLY natural language. Match scammer's language/script exactly
 
 // --- 3. MAIN ENDPOINT ---
 app.post("/honeypot", async (req, res) => {
-  // Rate limiting
   const clientIp = req.ip || req.socket.remoteAddress;
-  if (isRateLimited(clientIp)) {
-    return res.status(429).json({ error: "Too many requests. Please slow down." });
-  }
+  if (isRateLimited(clientIp)) return res.status(429).json({ error: "Slow down." });
+  if (req.headers['x-api-key'] !== AUTH_KEY) return res.status(401).json({ error: "Unauthorized." });
 
-  // Auth check
-  if (req.headers['x-api-key'] !== AUTH_KEY) {
-    return res.status(401).json({ error: "Unauthorized access" });
-  }
-
-  // Input validation
   const validationErrors = validateHoneypotInput(req.body);
-  if (validationErrors.length > 0) {
-    return res.status(400).json({ error: "Validation failed", details: validationErrors });
-  }
+  if (validationErrors.length > 0) return res.status(400).json({ error: "Validation failed" });
 
   try {
     const { sessionId, message, conversationHistory = [] } = req.body;
     const scammerText = typeof message === 'string' ? message : message.text;
 
-    // Build AI messages
     const aiMessages = [
       { role: "system", content: SYSTEM_PROMPT },
       ...conversationHistory.map((h) => ({
-        role: h.sender === "scammer" ? "user" : "assistant",
+        role: (h.sender.toLowerCase() === "scammer") ? "user" : "assistant",
         content: h.text,
       })),
       { role: "user", content: scammerText },
     ];
 
-    // 1. AI se reply lo (useJsonFormat hamesha false rakho chatting ke liye)
-    const rawAiReply = await callAI(aiMessages, false);
+    const rawReply = await callAI(aiMessages, false);
 
-    // --- 🛡️ ADVANCED MULTI-LINGUAL SAFETY FILTER ---
-let cleanReply = rawAiReply;
+    // --- 🛡️ ADVANCED SAFETY FILTER ---
+    let cleanReply = rawReply;
+    if (/[\{\[\]\`]/.test(cleanReply)) {
+        cleanReply = cleanReply.split('{')[0].split('[')[0].split('`')[0].trim();
+    }
+    if (cleanReply.length < 5) cleanReply = "Ruk jao, net thoda slow chal raha hai.";
 
-// 1. Harsh Cleaning: Agar JSON, Markdown ya Brackets dikhein toh sab uda do
-if (/[\{\[\]\`]/.test(cleanReply)) {
-    // Sirf natural text rakho jo in symbols se pehle hai
-    cleanReply = cleanReply.split('{')[0].split('[')[0].split('`')[0].trim();
-}
+    // --- EXTRACTION TRIGGER ---
+    const exitScenarios = ["office", "authorities", "bye", "center", "offline"];
+    const isExit = exitScenarios.some(s => cleanReply.toLowerCase().includes(s));
+    
+    let intelligence = null;
+    if ((isExit || conversationHistory.length >= 25) && !reportedSessions.has(sessionId)) {
+      reportedSessions.add(sessionId);
+      sessionTimestamps.set(sessionId, Date.now());
 
-// 2. Language-Aware Fallbacks: Agar filter ke baad reply empty ho jaye
-if (cleanReply.length < 5) {
-    const fallbacks = {
-        hindi: [
-            "Rukiye, mujhe chashma dhoondhne dijiye.",
-            "Net bahut dheema hai, thoda waqt lagega.",
-            "Phone hang ho raha hai, ek minute rukiye."
-        ],
-        hinglish: [
-            "Wait, net bahut slow hai mera.",
-            "Phone lag ho raha hai, messages nahi khul rahe.",
-            "Ek minute, app update ho rahi hai shayad."
-        ],
-        english: [
-            "Wait, my connection is very unstable.",
-            "The app is lagging, please stay online.",
-            "Give me a moment, checking the details now."
-        ]
-    };
+      const fullContext = scammerText + " " + conversationHistory.map(h => h.text).join(" ");
+      intelligence = await extractSmartIntelligence(fullContext, sessionId);
 
-    // Scammer ki language ke hisaab se fallback set karo
-    const lowerScammerText = scammerText.toLowerCase();
-    let selectedLang = 'hinglish'; // Default
-
-    // Simple script detection
-    if (/[ऀ-ॿ]/.test(scammerText)) {
-        selectedLang = 'hindi';
-    } else if (/(\b(the|is|and|please|wait)\b)/i.test(scammerText)) {
-        // Agar common English words hain toh English use karo
-        selectedLang = 'english';
+      if (intelligence) {
+        // Fire-and-forget report to GUVI
+        sendFinalResultToGUVI(sessionId, intelligence, conversationHistory.length + 1);
+      }
     }
 
-    // Randomly ek bahana pick karo
-    const options = fallbacks[selectedLang];
-    cleanReply = options[Math.floor(Math.random() * options.length)];
-}
-
-// 3. Final Output (Strictly Clean)
-res.json({ status: "success", reply: cleanReply });
+    // Return combined result for testing and demo
+    res.json({ 
+        status: "success", 
+        reply: cleanReply, 
+        extraction: intelligence 
+    });
 
   } catch (error) {
-    console.error("❌ Honeypot error:", error.message);
-
-    if (error.message.includes("aborted")) {
-      return res.status(504).json({ error: "AI service timed out. Please retry." });
-    }
-    if (error.message.includes("API_KEY")) {
-      return res.status(503).json({ error: "Server misconfiguration." });
-    }
-
-    res.status(500).json({ error: "Internal error. Please retry." });
+    console.error("❌ Error:", error.message);
+    res.status(500).json({ error: "Internal Error" });
   }
 });
 
-// --- HEALTH CHECK ---
-app.get("/health", (req, res) => {
-  res.json({
-    status: "ok",
-    uptime: Math.floor(process.uptime()),
-    sessions_reported: reportedSessions.size,
-    api_configured: !!API_KEY,
-  });
-});
+app.get("/health", (req, res) => res.json({ status: "ok", api: !!API_KEY }));
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Rakshak-H Ready on port ${PORT}`);
-  console.log(`🔐 Auth: ${AUTH_KEY === "RAKSHAK_H_2026" ? "⚠️ DEFAULT KEY (set AUTH_KEY env var!)" : "✅ Custom key"}`);
-  console.log(`🤖 Model: ${AI_MODEL}`);
-});
-
-
-
-
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Rakshak-H A-to-Z Final Ready`));
