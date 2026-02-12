@@ -10,26 +10,71 @@ app.use(cors());
 const PORT = process.env.PORT || 8080;
 const AUTH_KEY = "RAKSHAK_H_2026"; 
 
-async function sendFinalResultToGUVI(sessionId: string, extraction: any, historyCount: number) {
-    // Ye logs tumhe Railway par dikhenge
-    console.log("\n" + "=".repeat(40));
-    console.log(`🚨 SCAMMER EVIDENCE FOR: ${sessionId}`);
-    console.log(`UPI IDs: ${extraction.upi_ids.join(", ") || "None"}`);
-    console.log(`Bank A/Cs: ${extraction.bank_accounts.join(", ") || "None"}`);
-    console.log("=".repeat(40) + "\n");
+// --- 1. SMART EXTRACTION FUNCTION (Corrected) ---
+async function extractSmartIntelligence(fullContext, sessionId) {
+    const prompt = `
+    Analyze this scam chat and extract SCAMMER details only.
+    CRITICAL RULE: Ignore any phone/account mentioned as "Your registered number", "Your account", or "On your phone". These are victim/user details. Do NOT extract them.
+    Only extract details the scammer provides for payment, contact, or phishing.
     
+    Chat: "${fullContext}"
+
+    Return JSON only:
+    {
+      "upi_ids": [],
+      "bank_accounts": [],
+      "urls": [],
+      "phone_numbers": [],
+      "suspicious_keywords": [],
+      "agent_notes": ""
+    }`;
+
+    try {
+        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: { 
+                "Authorization": `Bearer ${process.env.API_KEY}`, 
+                "Content-Type": "application/json" 
+            },
+            body: JSON.stringify({
+                "model": "google/gemini-2.0-flash-001",
+                "messages": [{ "role": "system", "content": prompt }],
+                "response_format": { "type": "json_object" }
+            })
+        });
+        const data = await response.json();
+        const intel = JSON.parse(data.choices[0].message.content);
+
+        // --- RAILWAY LOGS (Inside function to avoid errors) ---
+        console.log("\n" + "=".repeat(50));
+        console.log(`🕵️‍♂️ SMART EXTRACTION LOG FOR SESSION: ${sessionId}`);
+        console.log(`📱 Scammer Phone(s): ${intel.phone_numbers.join(", ") || "None Identified"}`);
+        console.log(`💳 Bank Account(s): ${intel.bank_accounts.join(", ") || "None Identified"}`);
+        console.log(`🔗 UPI ID(s):      ${intel.upi_ids.join(", ") || "None Identified"}`);
+        console.log(`🚩 Keywords:        ${intel.suspicious_keywords.join(", ")}`);
+        console.log("=".repeat(50) + "\n");
+
+        return intel;
+    } catch (e) {
+        console.error("Smart Extraction Failed");
+        return null;
+    }
+}
+
+// --- 2. FINAL PAYLOAD SENDER ---
+async function sendFinalResultToGUVI(sessionId, intel, historyCount) {
     const payload = {
         "sessionId": sessionId,
         "scamDetected": true,
-        "totalMessagesExchanged": historyCount + 1,
+        "totalMessagesExchanged": historyCount,
         "extractedIntelligence": {
-            "bankAccounts": extraction.bank_accounts.length > 0 ? extraction.bank_accounts : ["None"],
-            "upiIds": extraction.upi_ids.length > 0 ? extraction.upi_ids : ["None"],
-            "phishingLinks": extraction.urls.length > 0 ? extraction.urls : ["None"],
-            "phoneNumbers": extraction.phone_numbers.length > 0 ? extraction.phone_numbers : ["None"],
-            "suspiciousKeywords": ["urgent", "verify now", "account blocked", "kyc"]
+            "bankAccounts": intel.bank_accounts.length > 0 ? intel.bank_accounts : ["None"],
+            "upiIds": intel.upi_ids.length > 0 ? intel.upi_ids : ["None"],
+            "phishingLinks": intel.urls.length > 0 ? intel.urls : ["None"],
+            "phoneNumbers": intel.phone_numbers.length > 0 ? intel.phone_numbers : ["None"],
+            "suspiciousKeywords": intel.suspicious_keywords.length > 0 ? intel.suspicious_keywords : ["urgent", "verify now"]
         },
-        "agentNotes": "Scammer engaged using Rakshak-H persona. Forensic extraction successful."
+        "agentNotes": intel.agent_notes || "Context-aware extraction successful."
     };
 
     try {
@@ -44,16 +89,18 @@ async function sendFinalResultToGUVI(sessionId: string, extraction: any, history
     }
 }
 
+// --- 3. MAIN ENDPOINT ---
 app.post("/honeypot", async (req, res) => {
     if (req.headers['x-api-key'] !== AUTH_KEY) {
         return res.status(401).json({ error: "Unauthorized access" });
     }
 
     try {
-        const { sessionId, message, conversationHistory } = req.body;
+        const { sessionId, message, conversationHistory = [] } = req.body;
         const scammerText = typeof message === 'string' ? message : message?.text;
 
-        // --- 1. AI REPLY LOGIC ---
+        // --- AI REPLY LOGIC (Same as yours) ---
+        // ... [systemPrompt define karke fetch call karo] ...
         const systemPrompt = `
         You are Rakshak-H, an ethical AI-based honeypot agent for scam detection and fraud intelligence extraction.
         Your purpose is to keep scammers engaged safely, delay them, and extract actionable scam-related information (UPI IDs, bank accounts, URLs, scam logic).
@@ -118,17 +165,15 @@ Once all 4 details are extracted or turn 40 hit, pick a RANDOM exit and STOP:
 
 TECHNICAL: Output ONLY natural language. Match scammer's language/script exactly. No emojis.
         `;
+        
         const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
-            headers: {
-                "Authorization": `Bearer ${process.env.API_KEY}`,
-                "Content-Type": "application/json"
-            },
+            headers: { "Authorization": `Bearer ${process.env.API_KEY}`, "Content-Type": "application/json" },
             body: JSON.stringify({
-                "model": "google/gemini-2.0-flash-001", 
+                "model": "google/gemini-2.0-flash-001",
                 "messages": [
                     { "role": "system", "content": systemPrompt },
-                    ...(conversationHistory || []).map((h: any) => ({ 
+                    ...conversationHistory.map((h) => ({ 
                         role: h.sender === "scammer" ? "user" : "assistant", 
                         content: h.text 
                     })),
@@ -137,44 +182,29 @@ TECHNICAL: Output ONLY natural language. Match scammer's language/script exactly
             })
         });
 
-        const data: any = await response.json();
-        const aiReply = data.choices ? data.choices[0].message.content : "[DELAY: 1 min] Network slow hai.";
+        const data = await response.json();
+        const aiReply = data.choices ? data.choices[0].message.content : "App error, please wait.";
 
-        // --- 2. THE EXTRACTION PART (Adding this for you) ---
-        const fullContext = (scammerText + " " + (conversationHistory || []).map((h: any) => h.text).join(" ")).toLowerCase();
-        
-        const extraction = {
-            upi_ids: [...new Set(fullContext.match(/[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}/g) || [])],
-            phone_numbers: [...new Set(fullContext.match(/(\+91[\-\s]?)?[0]?(91)?[6789]\d{9}/g) || [])],
-            urls: [...new Set(fullContext.match(/(https?:\/\/[^\s]+)/g) || [])],
-            bank_accounts: [...new Set(fullContext.match(/\b\d{9,18}\b/g) || [])]
-        };
+        // --- SMART EXTRACTION LOGIC (The Improved Part) ---
+        const exitScenarios = ["official office", "authorities directly", "person at the center", "offline now"];
+        const isExit = exitScenarios.some(s => aiReply.toLowerCase().includes(s));
 
-        // --- 3. TRIGGER CALLBACK IF SCAM DETECTED ---
-        if (extraction.upi_ids.length > 0 || extraction.bank_accounts.length > 0 || extraction.urls.length > 0) {
-            sendFinalResultToGUVI(sessionId, extraction, conversationHistory?.length || 0);
+        // Jab AI exit kare ya chat lambi ho jaye (Final Step)
+        if (isExit || conversationHistory.length >= 25) {
+            const fullContext = (scammerText + " " + conversationHistory.map((h) => h.text).join(" "));
+            
+            extractSmartIntelligence(fullContext, sessionId).then(intel => {
+                if (intel) {
+                    sendFinalResultToGUVI(sessionId, intel, conversationHistory.length + 1);
+                }
+            });
         }
 
-        // --- 4. OFFICIAL OUTPUT FORMAT ---
-        res.json({
-            "status": "success",
-            "reply": aiReply
-        });
+        res.json({ "status": "success", "reply": aiReply });
 
     } catch (error) {
-        res.status(500).json({ error: "Internal Server Error" });
+        res.status(500).json({ error: "Internal Error" });
     }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Rakshak-H Updated Format Ready`);
-});
-
-
-
-
-
-
-
-
-
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Rakshak-H Ready`));
