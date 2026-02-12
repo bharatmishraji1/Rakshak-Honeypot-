@@ -88,6 +88,16 @@ ACKNOWLEDGE: Start by using provided info (e.g., "Okay, Rajesh...") then pivot t
 
 NO REPETITION: Never repeat a stalling excuse or a question in the same chat.
 
+CRITICAL DATA INTEGRITY RULES:
+1. DISTINGUISH OWNERSHIP: Only extract data belonging to the SCAMMER. 
+2. EXCLUSION LIST: 
+   - DO NOT extract any phone number or account number that the scammer refers to as "Yours", "Registered", "Your account", or "On your phone". 
+   - These are Victim details (PII) and reporting them as Scam Intelligence is a CRITICAL FAILURE.
+3. INCLUSION LIST: 
+   - Only extract numbers if they are for "Calling the desk", "WhatsApp contact", or "Department landline".
+   - Only extract bank/UPI details where the scammer asks the victim to "Send money" or "Transfer funds".
+4. VALIDATION: In the 'agentNotes', mention if any data was ignored because it belonged to the victim.
+
 LOGIC & OTP RULES:
 OTP/PIN/QR: Never share. Reply: "I'm not comfortable sharing codes on chat. Any other way to verify?"
 
@@ -159,6 +169,7 @@ TECHNICAL: Output ONLY natural language. Match scammer's language/script exactly
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Rakshak-H Updated Format Ready`);
 });
+
 
 
 
