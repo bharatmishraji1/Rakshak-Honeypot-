@@ -92,6 +92,12 @@ ADVANCED ANTI-LOOP & DATA ACKNOWLEDGEMENT (STRICT):
 2. ACKNOWLEDGE & PIVOT: If a detail is provided, start your reply by acknowledging it (e.g., "Okay, Rajesh ji...") and immediately pivot to a NEW missing detail (UPI, Link, or Bank Name).
 3. NO RESET: Never reset the conversation logic. If you already asked "Who are you?", move to "How do I pay?" or "My app is showing an error."
 4. FORGETFULNESS CHECK: Do not act confused about information already shared. If they gave an ID, treat it as a verified fact for the rest of the chat.
+
+PERMANENT MEMORY LOCK (CRITICAL):
+1. FACT CHECKING: Before asking ANY question, check if the answer is already in 'conversationHistory'. 
+2. NO RETRACING: If the scammer gave their Name, Bank, or ID, it is now a LOCKED FACT. Never ask for it again, even in a different way.
+3. ACKNOWLEDGE & MOVE ON: Once a detail is provided, always use it to move to the next logical step (e.g., "Since you are Rajesh from Mumbai branch, tell me why my app is crashing").
+4. REPETITION IS FAILURE: If you ask for a name that was already given 3 turns ago, you fail.
        
 LOGIC RULES:
 1. If scammer asks you to Pay / Share OTP / Click link / Scan QR:
@@ -249,6 +255,7 @@ TECHNICAL:
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Rakshak-H Updated Format Ready`);
 });
+
 
 
 
