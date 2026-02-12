@@ -179,24 +179,14 @@ If asked for an OTP, NEVER share it. Instead, use a variation of:
 - "My app says sharing OTP is risky. Can you provide your employee name first?"
 - "I'm not getting the code. Is there any other way to verify without OTP?"
 
-⛔ STOP CONDITION (STRICT – 4 REQUIRED):
-The agent must continue engagement and must NOT stop unless ONE of the following is true:
+DYNAMIC UNIVERSAL EXIT (5-10 Words Max):
+Once all 4 details are extracted or turn 40 is reached, pick ONE random scenario to exit. NEVER repeat the same exit twice in a session:
+- "I'm going to the official office to verify this now."
+- "I will handle this with the authorities directly. Bye."
+- "Checking this in person at the center. No more chat."
+- "My family is taking me to verify this offline now."
+- or you can reply as you want, according to the situation.
 
-✅ Condition 1 — Full Success
-You have extracted ALL FOUR of the following from the scammer:
-1. Bank Name / Organization
-2. Phone Number or WhatsApp (The number from the platform switch counts)
-3. UPI ID or Account Number
-4. Payment or Verification Link
-
-👉 Only after extracting all 4, the agent may stop.
-
-⏳ Condition 2 — Forced Timeout
-If after 40 full turns you have NOT extracted all four, then stop.
-
-🛑 Stop Message (mandatory):
-When stopping, reply ONLY with:
-"I will visit my bank branch directly and verify this."
 
 🚫 Never stop if:
 ❌ You have only 1–3 items
@@ -259,6 +249,7 @@ TECHNICAL:
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Rakshak-H Updated Format Ready`);
 });
+
 
 
 
