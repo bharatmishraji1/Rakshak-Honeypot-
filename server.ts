@@ -305,23 +305,28 @@ app.post("/honeypot", async (req, res) => {
     sessionMemory.set(sessionId, chatState);
 
     // --- EXTRACTION TRIGGER ---
-    const exitScenarios = ["office", "authorities", "bye", "center", "offline"];
-    const isExit = exitScenarios.some(s => cleanReply.toLowerCase().includes(s));
+  // 1. Check karo ki kya chat khatam karne ka signal mila hai
+const isStopRequested = ["police", "station", "reporting", "bye", "stop", "end", "offline"].some(s => 
+    scammerText.toLowerCase().includes(s) || cleanReply.toLowerCase().includes(s)
+);
+
+let intelligence = null;
+
+// 2. Agar chat stop hui (isStopRequested) ya messages limit reach hui
+if ((isStopRequested || conversationHistory.length >= 20) && !reportedSessions.has(sessionId)) {
     
-    let intelligence = null;
-    if ((isExit || conversationHistory.length >= 25) && !reportedSessions.has(sessionId)) {
-      reportedSessions.add(sessionId);
-      sessionTimestamps.set(sessionId, Date.now());
+    reportedSessions.add(sessionId);
+    sessionTimestamps.set(sessionId, Date.now());
 
-      const fullContext = scammerText + " " + conversationHistory.map(h => h.text).join(" ");
-      intelligence = await extractSmartIntelligence(fullContext, sessionId);
+    // Poori chat ka nichod nikaalo
+    const fullContext = conversationHistory.map(h => h.text).join(" ") + " " + scammerText;
+    intelligence = await extractSmartIntelligence(fullContext, sessionId);
 
-      if (intelligence) {
-        // Fire-and-forget report to GUVI
-        sendFinalResultToGUVI(sessionId, intelligence, conversationHistory.length + 1);
-      }
+    // 3. Agar AI ne data dhoond liya, toh GUVI ko report bhej do
+    if (intelligence) {
+        await sendFinalResultToGUVI(sessionId, intelligence, conversationHistory.length + 1);
     }
-
+}
     // Return combined result for testing and demo
     res.json({ 
         status: "success", 
@@ -338,6 +343,7 @@ app.post("/honeypot", async (req, res) => {
 app.get("/health", (req, res) => res.json({ status: "ok", api: !!API_KEY }));
 
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Rakshak-H A-to-Z Final Ready`));
+
 
 
 
