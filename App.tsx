@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Shield, 
   Plus, 
@@ -8,7 +7,8 @@ import {
   PanelRight, 
   Trash2,
   AlertCircle,
-  X
+  X,
+  Activity
 } from 'lucide-react';
 import { rakshak } from './services/geminiService';
 import { Message, Session } from './types';
@@ -20,120 +20,74 @@ function App() {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isReporting, setIsReporting] = useState(false);
-  const [isPanelOpen, setIsPanelOpen] = useState(false);
+  const [isPanelOpen, setIsPanelOpen] = useState(true); // Default open for impact
   const [error, setError] = useState<string | null>(null);
 
   const currentSession = sessions.find(s => s.id === currentSessionId);
 
-  useEffect(() => {
-    if (sessions.length === 0) {
-      createNewSession();
-    }
-  }, []);
+  // --- 🧠 LIVE INTELLIGENCE TRACKING ---
+  const intelStats = useMemo(() => {
+    if (!currentSession?.report?.extracted_entities) return { count: 0, types: [] };
+    const entities = currentSession.report.extracted_entities;
+    const items = Object.entries(entities)
+      .filter(([_, val]) => Array.isArray(val) && val.length > 0);
+    return {
+      count: items.reduce((acc, [_, val]) => acc + (val as string[]).length, 0),
+      types: items.map(([key]) => key.replace('_', ' '))
+    };
+  }, [currentSession?.report]);
 
   useEffect(() => {
-    if (currentSession?.report && !isPanelOpen) {
-      setIsPanelOpen(true);
-    }
-  }, [currentSession?.report]);
+    if (sessions.length === 0) createNewSession();
+  }, []);
 
   const handleSendMessage = async (content: string) => {
     if (!currentSessionId) return;
     setError(null);
 
-    const userMessage: Message = {
-      role: 'user',
-      content,
-      timestamp: Date.now()
-    };
-
+    const userMessage: Message = { role: 'user', content, timestamp: Date.now() };
     const updatedMessages = [...(currentSession?.messages || []), userMessage];
     
     setSessions(prev => prev.map(s => 
-      s.id === currentSessionId 
-        ? { ...s, messages: updatedMessages, lastActive: Date.now() } 
-        : s
+      s.id === currentSessionId ? { ...s, messages: updatedMessages, lastActive: Date.now() } : s
     ));
 
     setIsProcessing(true);
     try {
       const rawResponse = await rakshak.getChatResponse(updatedMessages);
       
-      // 1. Check for Auto-Termination JSON
-      if (rawResponse.trim().startsWith('{') && rawResponse.trim().endsWith('}')) {
-        try {
-          const report = JSON.parse(rawResponse);
-          if (report.scam_detected !== undefined) {
-            setSessions(prev => prev.map(s => 
-              s.id === currentSessionId 
-                ? { ...s, report, title: report.scam_type || s.title } 
-                : s
-            ));
-            setIsProcessing(false);
-            return;
-          }
-        } catch (e) {}
+      // Auto-trigger intelligence extraction every 3 messages
+      if (updatedMessages.length % 3 === 0) {
+        handleGenerateReport();
       }
 
-      // 2. Parse [DELAY: X min] tag
-      let delayMs = 1500;
-      let cleanText = rawResponse;
-      const delayMatch = rawResponse.match(/\[DELAY:\s*(\d+)\s*min\]/i);
-      if (delayMatch) {
-        const mins = parseInt(delayMatch[1]);
-        // Scaled for demo: 1 min = 2s delay
-        delayMs = Math.max(1000, mins * 2000); 
-        cleanText = rawResponse.replace(/\[DELAY:\s*\d+\s*min\]/gi, '').trim();
-      }
-
-      // 3. Exactly ONE message per turn
+      // Handle termination or normal flow
+      let cleanText = rawResponse.replace(/\[DELAY:\s*\d+\s*min\]/gi, '').trim();
+      
       setTimeout(() => {
-        const botMessage: Message = {
-          role: 'model',
-          content: cleanText,
-          timestamp: Date.now()
-        };
-        
-        setSessions(prev => {
-          const session = prev.find(s => s.id === currentSessionId);
-          if (!session) return prev;
-          return prev.map(s => 
-            s.id === currentSessionId 
-              ? { ...s, messages: [...s.messages, botMessage], lastActive: Date.now() } 
-              : s
-          );
-        });
-
+        const botMessage: Message = { role: 'model', content: cleanText, timestamp: Date.now() };
+        setSessions(prev => prev.map(s => 
+          s.id === currentSessionId ? { ...s, messages: [...s.messages, botMessage], lastActive: Date.now() } : s
+        ));
         setIsProcessing(false);
-      }, delayMs);
+      }, 1000);
 
     } catch (error: any) {
-      console.error("Chat error", error);
       setIsProcessing(false);
-      const isQuota = error?.message?.includes('429') || error?.status === 429;
-      setError(isQuota 
-        ? "API Quota Exceeded. Please wait a minute and try again." 
-        : "Failed to connect to the agent. Please check your network."
-      );
+      setError("Connection lag detected. Scammer might be suspicious.");
     }
   };
 
   const handleGenerateReport = async () => {
-    if (!currentSession || currentSession.messages.length === 0) return;
+    if (!currentSession || currentSession.messages.length < 2) return;
     setIsReporting(true);
-    setError(null);
     try {
       const report = await rakshak.generateReport(currentSession.messages);
       setSessions(prev => prev.map(s => 
         s.id === currentSessionId ? { ...s, report, title: report.scam_type || s.title } : s
       ));
-    } catch (error: any) {
-      console.error("Report generation failed", error);
-      const isQuota = error?.message?.includes('429') || error?.status === 429;
-      setError(isQuota 
-        ? "API Quota Exceeded. Report generation failed." 
-        : "Extraction failed due to a service error."
-      );
+    } catch (e) {
+      console.error("Extraction silent fail");
     } finally {
       setIsReporting(false);
     }
@@ -141,106 +95,65 @@ function App() {
 
   const createNewSession = () => {
     const newId = crypto.randomUUID();
-    const newSession: Session = {
-      id: newId,
-      title: "New Case",
-      messages: [],
-      lastActive: Date.now()
-    };
-    setSessions(prev => [newSession, ...prev]);
+    setSessions(prev => [{ id: newId, title: "Active Case", messages: [], lastActive: Date.now() }, ...prev]);
     setCurrentSessionId(newId);
-    setError(null);
-  };
-
-  const deleteSession = (id: string) => {
-    setSessions(prev => prev.filter(s => s.id !== id));
-    if (currentSessionId === id) setCurrentSessionId(null);
   };
 
   return (
-    <div className="flex h-screen bg-white text-slate-800 font-sans relative">
-      {/* Error Toast */}
-      {error && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] w-full max-w-md px-4 animate-in fade-in slide-in-from-top-4 duration-300">
-          <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg shadow-lg flex items-start gap-3">
-            <AlertCircle className="shrink-0 mt-0.5" size={18} />
-            <div className="flex-1">
-              <p className="text-sm font-semibold">Service Error</p>
-              <p className="text-xs opacity-90">{error}</p>
-            </div>
-            <button onClick={() => setError(null)} className="p-1 hover:bg-red-100 rounded-md transition-colors">
-              <X size={16} />
-            </button>
+    <div className="flex h-screen bg-slate-50 text-slate-800 font-sans overflow-hidden">
+      {/* SIDEBAR */}
+      <aside className="w-64 border-r border-slate-200 bg-white flex flex-col hidden lg:flex">
+        <div className="p-6 flex items-center gap-3 border-b border-slate-50">
+          <div className="bg-teal-600 p-1.5 rounded-lg text-white">
+            <Shield size={22} />
           </div>
+          <span className="font-black text-xl text-slate-900 tracking-tighter">RAKSHAK-H</span>
         </div>
-      )}
-
-      {/* LEFT SIDEBAR */}
-      <aside className="w-64 border-r border-slate-100 flex flex-col bg-slate-50/50 hidden md:flex">
-        <div className="p-4 flex items-center gap-2 mb-4">
-          <Shield size={20} className="text-teal-600" />
-          <span className="font-bold text-slate-900 tracking-tight">Rakshak-H</span>
-        </div>
-
-        <div className="px-3 mb-6">
-          <button 
-            onClick={createNewSession}
-            className="w-full flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors shadow-sm"
-          >
-            <Plus size={16} />
-            New Case
+        
+        <div className="p-4">
+          <button onClick={createNewSession} className="w-full py-2.5 bg-slate-900 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-all shadow-md">
+            <Plus size={18} /> INITIATE NEW TRAP
           </button>
         </div>
 
-        <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-3 mb-2">History</div>
+        <nav className="flex-1 px-4 space-y-2 overflow-y-auto pt-2">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2">Live Sessions</p>
           {sessions.map(s => (
-            <div key={s.id} className="group relative">
-              <button
-                onClick={() => { setCurrentSessionId(s.id); setError(null); }}
-                className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all text-left truncate ${
-                  currentSessionId === s.id ? 'bg-slate-200/50 text-slate-900 font-medium' : 'text-slate-500 hover:bg-slate-100'
-                }`}
-              >
-                <History size={16} />
+            <button key={s.id} onClick={() => setCurrentSessionId(s.id)} className={`w-full text-left p-3 rounded-xl text-sm transition-all group relative ${currentSessionId === s.id ? 'bg-teal-50 text-teal-700 font-bold border border-teal-100' : 'hover:bg-slate-100 text-slate-500'}`}>
+              <div className="flex items-center gap-3">
+                <Activity size={14} className={currentSessionId === s.id ? 'animate-pulse' : ''} />
                 <span className="truncate">{s.title}</span>
-              </button>
-              <button 
-                onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500"
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
+              </div>
+            </button>
           ))}
         </nav>
-
-        <div className="p-4 border-t border-slate-100">
-          <button className="w-full flex items-center gap-2 px-3 py-2 text-slate-500 hover:text-slate-800 text-sm">
-            <Settings size={16} />
-            Settings
-          </button>
-        </div>
       </aside>
 
-      {/* MAIN CHAT AREA */}
-      <main className="flex-1 flex flex-col min-w-0">
-        <header className="h-12 border-b border-slate-100 flex items-center justify-between px-6 bg-white/80 backdrop-blur-sm sticky top-0 z-20">
-          <div className="flex items-center gap-2">
-            <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              Rakshak-H <span className="mx-2">•</span> <span className="text-teal-600 font-bold">Human Simulation Active</span>
-            </h2>
+      {/* MAIN CONTENT */}
+      <main className="flex-1 flex flex-col bg-white">
+        <header className="h-16 border-b border-slate-100 flex items-center justify-between px-8 bg-white/50 backdrop-blur-xl sticky top-0 z-30">
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-red-500 rounded-full animate-ping" />
+              <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest">Honeypot Active</h2>
+            </div>
+            <div className="flex gap-2 mt-1">
+              <span className="text-[10px] font-bold px-2 py-0.5 bg-teal-100 text-teal-700 rounded-md">INTEL: {intelStats.count}/4</span>
+              <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md">TURNS: {currentSession?.messages.length || 0}</span>
+            </div>
           </div>
-          <button 
-            onClick={() => setIsPanelOpen(!isPanelOpen)}
-            className={`p-2 rounded-md transition-colors ${isPanelOpen ? 'text-teal-600 bg-teal-50' : 'text-slate-400 hover:bg-slate-100'}`}
-            title="Toggle Intelligence Panel"
-          >
-            <PanelRight size={20} />
-          </button>
+
+          <div className="flex items-center gap-4">
+            <button onClick={handleGenerateReport} disabled={isReporting} className="text-[11px] font-black text-teal-600 uppercase border-b-2 border-teal-600 pb-0.5 hover:text-teal-700 transition-all">
+              {isReporting ? 'EXTRACTING...' : 'FORCE EXTRACTION'}
+            </button>
+            <button onClick={() => setIsPanelOpen(!isPanelOpen)} className={`p-2 rounded-xl transition-all ${isPanelOpen ? 'bg-teal-50 text-teal-600' : 'text-slate-300 hover:bg-slate-50'}`}>
+              <PanelRight size={22} />
+            </button>
+          </div>
         </header>
 
-        <div className="flex-1 overflow-hidden relative">
+        <div className="flex-1 relative overflow-hidden">
           <ChatInterface 
             messages={currentSession?.messages || []}
             onSendMessage={handleSendMessage}
@@ -252,9 +165,9 @@ function App() {
         </div>
       </main>
 
-      {/* RIGHT INTELLIGENCE PANEL */}
+      {/* INTELLIGENCE PANEL */}
       {isPanelOpen && (
-        <aside className="w-80 border-l border-slate-100 bg-slate-50/30 flex flex-col animate-in slide-in-from-right duration-300">
+        <aside className="w-96 border-l border-slate-100 bg-slate-50/50 backdrop-blur-md flex flex-col animate-in slide-in-from-right duration-500">
           <IntelligencePanel 
             entities={currentSession?.report?.extracted_entities || null} 
             scamType={currentSession?.report?.scam_type}
