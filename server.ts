@@ -18,11 +18,10 @@ const finalReportsSent = new Set();
 async function callAI(messages, jsonMode = false) {
   const body = { 
     model: "google/gemini-2.0-flash-001", 
-    messages,
-    max_tokens: 500,
-    temperature: 0.5 // Temperature thoda kam kiya for accuracy
-  };
-  if (jsonMode) body.response_format = { type: "json_object" };
+    messages: aiMessages,
+    max_tokens: 100, // Forcing short replies
+    temperature: 0.6 
+};
 
   try {
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -43,7 +42,9 @@ function extractWithRegex(text) {
     upi: text.match(/[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}/g) || [],
     accounts: text.match(/\b\d{9,18}\b/g) || [],
     links: text.match(/https?:\/\/[^\s]+/g) || [],
-    phones: text.match(/(\+91[\-\s]?)?[0]?(91)?[6789]\d{9}/g) || []
+    phones: text.match(/(\+91[\-\s]?)?[0]?(91)?[6789]\d{9}/g) || [],
+    ifsc: text.match(/[A-Z]{4}0[A-Z0-9]{6}/g) || [], // Standard Indian IFSC format
+    emails: text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g) || []
   };
 }
 
@@ -59,15 +60,22 @@ app.post("/honeypot", async (req, res) => {
   try {
     const isHinglish = /[\u0900-\u097F]|bhaiya|ruko|theek|acha|kya/i.test(scammerText);
     
-    const aiMessages = [
-      { 
-        role: "system", 
-        content: `You are Rakshak-H. Persona: Retired Ramesh. Language: ${isHinglish ? 'Hinglish' : 'English'}.
-        Goal: Act confused. If scammer asks for money/OTP, ask for their UPI ID or Bank account so you can "go to bank and pay".` 
-      },
-      ...conversationHistory.map(h => ({ role: h.sender === "scammer" ? "user" : "assistant", content: h.text })),
-      { role: "user", content: scammerText }
-    ];
+  const aiMessages = [
+  { 
+    role: "system", 
+    content: `You are Rakshak-H. Persona: Retired Ramesh. 
+    Tone: Short, worried, and very tech-confused. 
+    Language: ${isHinglish ? 'Hinglish' : 'English'}.
+
+    STRATEGY:
+    1. KEEP IT SHORT: Max 1-2 sentences. Don't yap.
+    2. THE BAIT: "Bhaiya, paise dene ko taiyaar hoon par ye app nahi chal rahi."
+    3. THE TRAP: Directly ask: "Aap apna Bank Account ya UPI ID de do, main padosi ke ladke se abhi transfer karwa deta hoon."
+    4. CONFUSION: Call the OTP "Phone ka lock" or "char number wala code" and say it's not showing up.` 
+  },
+  ...conversationHistory.map(h => ({ role: h.sender === "scammer" ? "user" : "assistant", content: h.text })),
+  { role: "user", content: scammerText }
+];
 
     const reply = await callAI(aiMessages) || "Network issue bhaiya...";
 
@@ -124,3 +132,4 @@ app.post("/honeypot", async (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Final Rakshak-H Active`));
+
