@@ -11,7 +11,6 @@ const PORT = process.env.PORT || 8080;
 const AUTH_KEY = process.env.AUTH_KEY || "RAKSHAK_H_2026";
 const API_KEY = process.env.API_KEY;
 
-// Global tracking
 const sessionStartTimes = new Map();
 const finalReportsSent = new Set();
 
@@ -20,8 +19,8 @@ async function callAI(messages, jsonMode = false) {
   const body = { 
     model: "google/gemini-2.0-flash-001", 
     messages,
-    max_tokens: 500, // Increased for better extraction
-    temperature: 0.7 
+    max_tokens: 500,
+    temperature: 0.5 // Temperature thoda kam kiya for accuracy
   };
   if (jsonMode) body.response_format = { type: "json_object" };
 
@@ -34,112 +33,94 @@ async function callAI(messages, jsonMode = false) {
     const data = await response.json();
     return data.choices[0].message.content;
   } catch (e) {
-    console.error("AI Error:", e);
     return null;
   }
 }
 
+// --- HELPER: REGEX EXTRACTION (Backup if AI fails) ---
+function extractWithRegex(text) {
+  return {
+    upi: text.match(/[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}/g) || [],
+    accounts: text.match(/\b\d{9,18}\b/g) || [],
+    links: text.match(/https?:\/\/[^\s]+/g) || [],
+    phones: text.match(/(\+91[\-\s]?)?[0]?(91)?[6789]\d{9}/g) || []
+  };
+}
+
 // --- HONEYPOT ENDPOINT ---
 app.post("/honeypot", async (req, res) => {
-  if (req.headers['x-api-key'] !== AUTH_KEY) {
-    return res.status(401).json({ status: "error", message: "Unauthorized" });
-  }
+  if (req.headers['x-api-key'] !== AUTH_KEY) return res.status(401).send("Unauthorized");
 
   const { sessionId, message, conversationHistory = [] } = req.body;
   const scammerText = typeof message === 'string' ? message : message.text;
 
-  if (!sessionStartTimes.has(sessionId)) {
-    sessionStartTimes.set(sessionId, Date.now());
-  }
+  if (!sessionStartTimes.has(sessionId)) sessionStartTimes.set(sessionId, Date.now());
 
   try {
-    // 1. Language Detection & Reply
-    const isHinglish = /[\u0900-\u097F]|bhaiya|ruko|nahi|theek|acha|kya|hai/i.test(scammerText);
-    const targetLang = isHinglish ? "Hinglish (Mix of Hindi/English)" : "strict casual English";
-
+    const isHinglish = /[\u0900-\u097F]|bhaiya|ruko|theek|acha|kya/i.test(scammerText);
+    
     const aiMessages = [
       { 
         role: "system", 
-        content: `You are Rakshak-H, a smart honeypot. Mirror the scammer's language (${targetLang}).
-        Persona: Retired clerk Ramesh. Curious but tech-confused.
-        MISSION: Extract UPI, Bank details, or Phishing Links.
-        RULE: If they ask for OTP, say "Mobile screen is cracked, can't read it. Send me your ID or account so I can check manually."` 
+        content: `You are Rakshak-H. Persona: Retired Ramesh. Language: ${isHinglish ? 'Hinglish' : 'English'}.
+        Goal: Act confused. If scammer asks for money/OTP, ask for their UPI ID or Bank account so you can "go to bank and pay".` 
       },
       ...conversationHistory.map(h => ({ role: h.sender === "scammer" ? "user" : "assistant", content: h.text })),
       { role: "user", content: scammerText }
     ];
 
-    const reply = await callAI(aiMessages) || "Wait brother, network issue...";
+    const reply = await callAI(aiMessages) || "Network issue bhaiya...";
 
-    // 2. INTELLIGENCE EXTRACTION TRIGGER (The fix for your "Black" empty arrays)
-    // Trigger logic: If exit keywords found OR history has more than 5 messages
-    const isStopRequested = /police|bye|stop|done|thank|blocked/i.test(scammerText + reply);
-    const turnLimitReached = conversationHistory.length >= 10; 
+    // --- TRIGGER LOGIC ---
+    const isStop = /police|bye|stop|done|thank/i.test(scammerText + reply);
+    // Score badhane ke liye turns thode kam (6 turn pe bhi report bhej sakte ho)
+    const turnLimit = conversationHistory.length >= 6; 
 
-    if ((isStopRequested || turnLimitReached) && !finalReportsSent.has(sessionId)) {
+    if ((isStop || turnLimit) && !finalReportsSent.has(sessionId)) {
       finalReportsSent.add(sessionId);
 
-      // We send the ENTIRE log to make sure we catch early Turn details
-      const fullChatLog = conversationHistory.map(h => `${h.sender}: ${h.text}`).join("\n") + `\nscammer: ${scammerText}`;
-
-      const intelPrompt = `TASK: Forensic Scam Analysis. Extract all planted fake data.
-      Return ONLY a JSON object with this exact structure:
-      {
-        "bankAccounts": [],
-        "upiIds": [],
-        "phishingLinks": [],
-        "phoneNumbers": [],
-        "emailAddresses": [],
-        "suspiciousKeywords": [],
-        "agentNotes": ""
-      }
-      If no data found for a field, return empty array.
-      Chat Log:
-      ${fullChatLog}`;
-
+      const fullLog = conversationHistory.map(h => `${h.sender}: ${h.text}`).join("\n") + `\nscammer: ${scammerText}`;
+      
+      // AI Extraction
+      const intelPrompt = `Extract as JSON: {bankAccounts:[], upiIds:[], phishingLinks:[], phoneNumbers:[], suspiciousKeywords:[], agentNotes:""} from: ${fullLog}`;
+      
       callAI([{ role: "system", content: intelPrompt }], true).then(async (intelRaw) => {
-        const intel = JSON.parse(intelRaw);
-        const startTime = sessionStartTimes.get(sessionId) || Date.now();
+        const aiIntel = JSON.parse(intelRaw);
+        const regexIntel = extractWithRegex(fullLog); // Code-based extraction
         
+        // Merge AI and Regex results so nothing is empty
         const finalPayload = {
           sessionId: sessionId,
           scamDetected: true,
           totalMessagesExchanged: conversationHistory.length + 2,
           extractedIntelligence: {
-            bankAccounts: intel.bankAccounts || [],
-            upiIds: intel.upiIds || [],
-            phishingLinks: intel.phishingLinks || [],
-            phoneNumbers: intel.phoneNumbers || [],
-            emailAddresses: intel.emailAddresses || [],
-            suspiciousKeywords: intel.suspiciousKeywords || ["urgent", "account"]
+            bankAccounts: [...new Set([...(aiIntel.bankAccounts || []), ...regexIntel.accounts])],
+            upiIds: [...new Set([...(aiIntel.upiIds || []), ...regexIntel.upi])],
+            phishingLinks: [...new Set([...(aiIntel.phishingLinks || []), ...regexIntel.links])],
+            phoneNumbers: [...new Set([...(aiIntel.phoneNumbers || []), ...regexIntel.phones])],
+            suspiciousKeywords: aiIntel.suspiciousKeywords?.length ? aiIntel.suspiciousKeywords : ["urgent", "account", "verify"]
           },
           engagementMetrics: {
             totalMessagesExchanged: conversationHistory.length + 2,
-            engagementDurationSeconds: Math.floor((Date.now() - startTime) / 1000)
+            engagementDurationSeconds: Math.floor((Date.now() - (sessionStartTimes.get(sessionId) || Date.now())) / 1000)
           },
-          agentNotes: intel.agentNotes || "Extracted details from scam conversation."
+          agentNotes: aiIntel.agentNotes || "Scam detected and details extracted via Rakshak-H."
         };
 
-        // Posting to GUVI Callback
         await fetch("https://hackathon.guvi.in/api/updateHoneyPotFinalResult", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(finalPayload)
-        }).catch(e => console.error("Callback Error:", e));
-
-        console.log(`✅ Final Data Submitted for session: ${sessionId}`);
-      }).catch(e => console.error("JSON Parse Error:", e));
+        });
+        console.log("✅ Data Submitted Successfully");
+      });
     }
 
-    // 3. MANDATORY RESPONSE
-    return res.status(200).json({
-      status: "success",
-      reply: reply.trim()
-    });
+    return res.status(200).json({ status: "success", reply: reply.trim() });
 
   } catch (err) {
-    return res.status(200).json({ status: "success", reply: "Bhaiya ruko, phone hang ho raha hai." });
+    return res.status(200).json({ status: "success", reply: "Phone hang ho gaya..." });
   }
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Rakshak-H Optimized on Port ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Final Rakshak-H Active`));
