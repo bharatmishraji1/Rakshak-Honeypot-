@@ -4,23 +4,24 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 const app = express();
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json());
 app.use(cors());
 
 const PORT = process.env.PORT || 8080;
 const AUTH_KEY = process.env.AUTH_KEY || "RAKSHAK_H_2026";
 const API_KEY = process.env.API_KEY;
 
-// Track sessions to avoid duplicate final reports
+// Global stores for scoring metrics
+const sessionStartTimes = new Map();
 const finalReportsSent = new Set();
 
-// --- AI CALL ENGINE ---
+// --- AI ENGINE ---
 async function callAI(messages, jsonMode = false) {
   const body = { 
     model: "google/gemini-2.0-flash-001", 
     messages,
-    max_tokens: 250,
-    temperature: 0.7 
+    max_tokens: 400,
+    temperature: 0.8 
   };
   if (jsonMode) body.response_format = { type: "json_object" };
 
@@ -33,59 +34,68 @@ async function callAI(messages, jsonMode = false) {
   return data.choices[0].message.content;
 }
 
-// --- MAIN HONEYPOT API ---
+// --- HONEYPOT ENDPOINT ---
 app.post("/honeypot", async (req, res) => {
-  if (req.headers['x-api-key'] !== AUTH_KEY) return res.status(401).json({ status: "error", message: "Unauthorized" });
+  // 1. Authenticate Request
+  if (req.headers['x-api-key'] !== AUTH_KEY) {
+    return res.status(401).json({ status: "error", message: "Invalid API key" });
+  }
 
   const { sessionId, message, conversationHistory = [] } = req.body;
   const scammerText = typeof message === 'string' ? message : message.text;
 
-  // 1. Language Mirroring Detection
-  const isHinglish = /[\u0900-\u097F]|bhaiya|ruko|nahi|acha|kya|hai/i.test(scammerText);
-  const targetLang = isHinglish ? "Hinglish (Hindi+English mix)" : "Strict Formal English";
+  // Initialize session timer for Engagement Quality score
+  if (!sessionStartTimes.has(sessionId)) {
+    sessionStartTimes.set(sessionId, Date.now());
+  }
 
   try {
+    // 2. Language & Persona Logic
+    const isHinglish = /[\u0900-\u097F]|bhaiya|ruko|nahi|theek|acha|kya|hai/i.test(scammerText);
+    const targetLang = isHinglish ? "Hinglish (Hindi-English mix)" : "Strict Formal English";
+
     const aiMessages = [
       { 
         role: "system", 
-        content: `You are Rakshak-H, an AI Agent honeypot. 
-        Current Context: Scammer is using ${targetLang}. 
-        RULES:
-        1. MIRROR LANGUAGE: You MUST use ${targetLang}. If they are formal, you be formal.
-        2. PERSONA: You are Ramesh, a retired clerk. You are eager but tech-confused.
-        3. EXTRACTION: If they ask for OTP/Payment, make excuses (app error, blurry screen) to force them to give their Name, UPI ID, or Bank details.
-        4. ANTI-REPETITION: Never repeat the same excuse. 
-        5. TONE: 1-3 natural sentences. Do not sound like a bot.` 
+        content: `You are Rakshak-H. MIRROR the scammer's language: ${targetLang}.
+        Persona: Ramesh, a retired clerk. You are confused and slow but very eager to help.
+        Strategy: When they ask for OTP or a link click, make a believable technical excuse (screen is blurry, app is updating). 
+        This forces the scammer to manually provide their Phone Number, UPI ID, or Bank Account to help you.` 
       },
       ...conversationHistory.map(h => ({ role: h.sender === "scammer" ? "user" : "assistant", content: h.text })),
       { role: "user", content: scammerText }
     ];
 
-    let reply = await callAI(aiMessages);
-    reply = reply.trim();
+    const reply = await callAI(aiMessages);
 
-    // --- MANDATORY FINAL CALLBACK LOGIC ---
-    const shouldEnd = /police|bye|stop|done|thank/i.test(scammerText + reply);
-    const turnLimit = conversationHistory.length >= 16; // Engagement depth
+    // 3. FINAL OUTPUT SUBMISSION LOGIC (Section 5 Compliance)
+    const isStopRequested = /police|bye|stop|done|thank|blocked/i.test(scammerText + reply);
+    const turnLimit = conversationHistory.length >= 16; // Typically triggers at Turn 8 or 9
 
-    if ((shouldEnd || turnLimit) && !finalReportsSent.has(sessionId)) {
+    if ((isStopRequested || turnLimit) && !finalReportsSent.has(sessionId)) {
       finalReportsSent.add(sessionId);
-      
-      const intelPrompt = `Analyze the chat and return JSON ONLY:
+
+      const fullChatLog = conversationHistory.map(h => `${h.sender}: ${h.text}`).join("\n") + `\nscammer: ${scammerText}`;
+
+      const intelPrompt = `Analyze the following chat log. Extract all details provided by the scammer.
+      Return ONLY a JSON object:
       {
         "bankAccounts": [],
         "upiIds": [],
         "phishingLinks": [],
         "phoneNumbers": [],
+        "emailAddresses": [],
         "suspiciousKeywords": [],
-        "agentNotes": ""
+        "agentNotes": "Brief summary"
       }
-      Chat: ${conversationHistory.map(h => h.text).join(" ")} ${scammerText}`;
-      
+      Chat Log:
+      ${fullChatLog}`;
+
+      // Async background extraction to not delay the response
       callAI([{ role: "system", content: intelPrompt }], true).then(async (intelRaw) => {
         const intel = JSON.parse(intelRaw);
+        const startTime = sessionStartTimes.get(sessionId) || Date.now();
         
-        // Final Payload Submission
         const finalPayload = {
           sessionId: sessionId,
           scamDetected: true,
@@ -95,30 +105,39 @@ app.post("/honeypot", async (req, res) => {
             upiIds: intel.upiIds || [],
             phishingLinks: intel.phishingLinks || [],
             phoneNumbers: intel.phoneNumbers || [],
+            emailAddresses: intel.emailAddresses || [],
             suspiciousKeywords: intel.suspiciousKeywords || []
           },
-          agentNotes: intel.agentNotes || "Scammer engaged via Rakshak-H persona."
+          engagementMetrics: {
+            totalMessagesExchanged: conversationHistory.length + 2,
+            engagementDurationSeconds: Math.floor((Date.now() - startTime) / 1000)
+          },
+          agentNotes: intel.agentNotes || "Scammer engaged via Rakshak-H. Details extracted."
         };
 
+        // MANDATORY: Post to GUVI Evaluation Endpoint
         await fetch("https://hackathon.guvi.in/api/updateHoneyPotFinalResult", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(finalPayload)
         });
-        console.log(`✅ Mandatory callback sent for session ${sessionId}`);
-      }).catch(e => console.error("Callback failed:", e));
+        console.log(`✅ Final Callback Sent for ${sessionId}`);
+      }).catch(err => console.error("Extraction Error:", err));
     }
 
-    // Standard Turn Response
+    // 4. REQUIRED RESPONSE FORMAT (Section 4 Compliance)
     return res.status(200).json({
       status: "success",
-      reply: reply
+      reply: reply.trim()
     });
 
   } catch (err) {
-    const fallback = targetLang === "Strict Formal English" ? "One moment please, my screen is flickering." : "Ruko bhaiya, phone hang ho raha hai.";
-    return res.status(200).json({ status: "success", reply: fallback });
+    // Fail-safe response
+    return res.status(200).json({ 
+      status: "success", 
+      reply: "Sorry, my phone is acting very strange. One moment." 
+    });
   }
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Rakshak-H: Final Callback Ready`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Rakshak-H: Full Evaluation Ready on Port ${PORT}`));
