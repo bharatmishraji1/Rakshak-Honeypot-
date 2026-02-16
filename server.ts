@@ -52,7 +52,7 @@ app.post("/honeypot", async (req, res) => {
   try {
     // 2. Language & Persona Logic
     const isHinglish = /[\u0900-\u097F]|bhaiya|ruko|nahi|theek|acha|kya|hai/i.test(scammerText);
-    const targetLang = isHinglish ? "Hinglish (Hindi-English mix)" : "Strict Formal English";
+    const targetLang = isHinglish ? "Hinglish (Hindi-English mix)" : "Strict Casual English";
 
     const aiMessages = [
       { 
@@ -141,3 +141,4 @@ app.post("/honeypot", async (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Rakshak-H: Full Evaluation Ready on Port ${PORT}`));
+
