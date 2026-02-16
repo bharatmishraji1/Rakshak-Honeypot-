@@ -53,31 +53,39 @@ app.post("/honeypot", async (req, res) => {
   if (req.headers['x-api-key'] !== AUTH_KEY) return res.status(401).send("Unauthorized");
 
   const { sessionId, message, conversationHistory = [] } = req.body;
-  const scammerText = typeof message === 'string' ? message : message.text;
+// 1. Language Mirroring logic setup
+const scammerText = typeof message === 'string' ? message : message.text;
+// Check if scammer used Hindi/Devanagari or common Hinglish words
+const containsHindi = /[\u0900-\u097F]|bhaiya|ruko|theek|acha|kya|hai|beta/i.test(scammerText);
+const selectedLang = containsHindi ? "Hinglish (Hindi-English mix)" : "Strict Formal English";
 
-  if (!sessionStartTimes.has(sessionId)) sessionStartTimes.set(sessionId, Date.now());
-
-  try {
-    const isHinglish = /[\u0900-\u097F]|bhaiya|ruko|theek|acha|kya/i.test(scammerText);
-    
-  const aiMessages = [
+const aiMessages = [
   { 
     role: "system", 
     content: `You are Rakshak-H. Persona: Retired Ramesh. 
-    Tone: Short, worried, and very tech-confused. 
-    Language: ${isHinglish ? 'Hinglish' : 'English'}.
-
-    STRATEGY:
-    1. KEEP IT SHORT: Max 1-2 sentences. Don't yap.
-    2. THE BAIT: "Bhaiya, paise dene ko taiyaar hoon par ye app nahi chal rahi."
-    3. THE TRAP: Directly ask: "Aap apna Bank Account ya UPI ID de do, main padosi ke ladke se abhi transfer karwa deta hoon."
-    4. CONFUSION: Call the OTP "Phone ka lock" or "char number wala code" and say it's not showing up.` 
+    CURRENT LANGUAGE: ${selectedLang}. 
+    CRITICAL: You MUST respond only in ${selectedLang}. Do not use Hindi words if the user is speaking English.
+    
+    STRATEGY: 
+    - Act confused about the 16-digit account number.
+    - Say: "My glasses are broken, I can't read the SMS. Please send me YOUR account number, I will ask my neighbor to send money from his phone."
+    - This forces the scammer to give their details for Intelligence Extraction points.` 
   },
-  ...conversationHistory.map(h => ({ role: h.sender === "scammer" ? "user" : "assistant", content: h.text })),
+  ...conversationHistory.map(h => ({ 
+    role: h.sender === "scammer" ? "user" : "assistant", 
+    content: h.text 
+  })),
   { role: "user", content: scammerText }
 ];
 
-    const reply = await callAI(aiMessages) || "Network issue bhaiya...";
+// 2. Anti-Loop Error Handling
+const fallbacks = {
+    "English": ["One second, my phone is acting strange...", "Wait, the screen is flickering.", "I am trying to find the SMS folder."],
+    "Hinglish": ["Bhaiya ruko, phone hang ho raha hai...", "Screen thik se dikh nahi rahi.", "Ek minute, chashma dhoond raha hoon."]
+};
+
+const currentFallbacks = containsHindi ? fallbacks.Hinglish : fallbacks.English;
+const randomReply = currentFallbacks[Math.floor(Math.random() * currentFallbacks.length)];
 
     // --- TRIGGER LOGIC ---
     const isStop = /police|bye|stop|done|thank/i.test(scammerText + reply);
@@ -134,5 +142,6 @@ app.post("/honeypot", async (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Final Rakshak-H Active`));
+
 
 
