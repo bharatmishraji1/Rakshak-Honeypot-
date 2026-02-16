@@ -97,23 +97,25 @@ app.post("/honeypot", async (req, res) => {
         const regexIntel = extractWithRegex(fullLog); // Code-based extraction
         
         // Merge AI and Regex results so nothing is empty
-        const finalPayload = {
-          sessionId: sessionId,
-          scamDetected: true,
-          totalMessagesExchanged: conversationHistory.length + 2,
-          extractedIntelligence: {
-            bankAccounts: [...new Set([...(aiIntel.bankAccounts || []), ...regexIntel.accounts])],
-            upiIds: [...new Set([...(aiIntel.upiIds || []), ...regexIntel.upi])],
-            phishingLinks: [...new Set([...(aiIntel.phishingLinks || []), ...regexIntel.links])],
-            phoneNumbers: [...new Set([...(aiIntel.phoneNumbers || []), ...regexIntel.phones])],
-            suspiciousKeywords: aiIntel.suspiciousKeywords?.length ? aiIntel.suspiciousKeywords : ["urgent", "account", "verify"]
-          },
-          engagementMetrics: {
-            totalMessagesExchanged: conversationHistory.length + 2,
-            engagementDurationSeconds: Math.floor((Date.now() - (sessionStartTimes.get(sessionId) || Date.now())) / 1000)
-          },
-          agentNotes: aiIntel.agentNotes || "Scam detected and details extracted via Rakshak-H."
-        };
+       const finalPayload = {
+  sessionId: sessionId,
+  status: "success", // Mandatory Field for 5 points
+  scamDetected: true, // Mandatory Field for 5 points
+  totalMessagesExchanged: conversationHistory.length + 2,
+  extractedIntelligence: { // Mandatory Field for 5 points
+    bankAccounts: [...new Set([...(aiIntel.bankAccounts || []), ...regexIntel.accounts])],
+    upiIds: [...new Set([...(aiIntel.upiIds || []), ...regexIntel.upi])],
+    phishingLinks: [...new Set([...(aiIntel.phishingLinks || []), ...regexIntel.links])],
+    phoneNumbers: [...new Set([...(aiIntel.phoneNumbers || []), ...regexIntel.phones])],
+    emailAddresses: [...new Set([...(aiIntel.emailAddresses || []), ...regexIntel.emails])], // Added this
+    suspiciousKeywords: aiIntel.suspiciousKeywords?.length ? aiIntel.suspiciousKeywords : ["urgent", "account", "verify"]
+  },
+  engagementMetrics: { // Optional Field for 2.5 points
+    totalMessagesExchanged: conversationHistory.length + 2,
+    engagementDurationSeconds: Math.floor((Date.now() - (sessionStartTimes.get(sessionId) || Date.now())) / 1000)
+  },
+  agentNotes: aiIntel.agentNotes || "Scam detected and details extracted via Rakshak-H." // Optional Field for 2.5 points
+};
 
         await fetch("https://hackathon.guvi.in/api/updateHoneyPotFinalResult", {
           method: "POST",
@@ -132,4 +134,5 @@ app.post("/honeypot", async (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Final Rakshak-H Active`));
+
 
