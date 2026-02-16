@@ -15,10 +15,9 @@ const AUTH_KEY = process.env.AUTH_KEY || "RAKSHAK_H_2026";
 const sessionStartTimes = new Map();
 const finalReportsSent = new Set();
 
-// --- AI ENGINE ---
+// ---------------- AI ENGINE ----------------
 async function callAI(messages, jsonMode = false) {
   try {
-
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -34,22 +33,18 @@ async function callAI(messages, jsonMode = false) {
         messages,
         temperature: jsonMode ? 0.0 : 0.8,
         max_tokens: jsonMode ? 700 : 80,
-        ...(jsonMode && {
-          response_format: { type: "json_object" }
-        })
+        ...(jsonMode && { response_format: { type: "json_object" } })
       })
     });
 
     const data = await response.json();
     return data.choices?.[0]?.message?.content || null;
-
-  } catch (e) {
-    console.log("AI FAILED:", e.message);
+  } catch {
     return null;
   }
 }
 
-// --- REGEX FALLBACK ---
+// ---------------- REGEX ----------------
 function extractWithRegex(text) {
   return {
     upi: text.match(/[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}/g) || [],
@@ -60,7 +55,7 @@ function extractWithRegex(text) {
   };
 }
 
-// --- AI JSON EXTRACTION ---
+// ---------------- AI EXTRACTION ----------------
 async function extractIntelFromAI(fullLog) {
 
   const extractionPrompt = `
@@ -80,17 +75,14 @@ ${fullLog}
 `;
 
   try {
-    const raw = await callAI([
-      { role: "system", content: extractionPrompt }
-    ], true);
+    const raw = await callAI([{ role: "system", content: extractionPrompt }], true);
     return JSON.parse(raw);
   } catch {
-    console.log("AI JSON FAILED → REGEX ONLY");
     return {};
   }
 }
 
-// --- HONEYPOT ENDPOINT ---
+// ---------------- HONEYPOT ----------------
 app.post("/honeypot", async (req, res) => {
 
   try {
@@ -115,7 +107,7 @@ app.post("/honeypot", async (req, res) => {
       ? "Hinglish elderly Indian"
       : "Strict English elderly";
 
-    // --- TURN BASED PHASE ENGINE ---
+    // ---------- PHASE ENGINE ----------
     let phaseInstruction = "";
 
     if (turn <= 2)
@@ -124,15 +116,36 @@ app.post("/honeypot", async (req, res) => {
 
     else if (turn <= 4)
       phaseInstruction =
-        "Say your bank app is asking receiver bank name or number to verify transaction.";
+        "Say your bank app is asking receiver bank name or number to verify.";
 
     else if (turn <= 6)
       phaseInstruction =
-        "Say OTP not coming and receiver not verified, bank asking IFSC or alternate ID.";
+        "Say OTP not coming and receiver not verified.";
 
     else
       phaseInstruction =
-        "Say manager told you to manually enter receiver account or UPI to unblock transaction.";
+        "Say manager told you to manually enter receiver UPI or account.";
+
+    // ---------- REVERSAL TRAP ----------
+    let reversalTrap = "";
+
+    if (turn === 4)
+      reversalTrap = `
+Receiver not verified. Showing mismatch error.
+Is there any alternate UPI or bank account?
+`;
+
+    if (turn === 5)
+      reversalTrap = `
+App saying this UPI is inactive.
+Manager told me to try backup payment ID or direct account transfer.
+`;
+
+    if (turn === 6)
+      reversalTrap = `
+Still blocked. Asking IFSC of receiver bank.
+Otherwise need payment link.
+`;
 
     const aiMessages = [
       {
@@ -142,7 +155,7 @@ You are Ramesh, a 65-year-old confused Indian man talking to a scammer.
 
 Language: ${lang}
 
-Never directly ask for their UPI or account.
+Never directly ask for their UPI.
 
 Instead create dependency like:
 "Bank asking receiver UPI to verify"
@@ -161,12 +174,13 @@ Phone Number
 Payment Link
 Email
 
-Stay natural.
-Talk slowly.
-Never break character.
+Stay natural. Talk slowly.
 
 Current Turn Instruction:
 ${phaseInstruction}
+
+If needed also follow:
+${reversalTrap}
 `
       },
       ...conversationHistory.slice(-3).map(h => ({
@@ -183,7 +197,7 @@ ${phaseInstruction}
         ? "Arre network chala gaya."
         : "Wait, app freezing.";
 
-    // --- AUTO REPORT ---
+    // ---------- AUTO REPORT ----------
     if (turn >= 6 && !finalReportsSent.has(sessionId)) {
 
       finalReportsSent.add(sessionId);
@@ -211,7 +225,7 @@ ${phaseInstruction}
             suspiciousKeywords:
               aiIntel.suspiciousKeywords?.length
                 ? aiIntel.suspiciousKeywords
-                : ["otp", "verify", "upi", "bank"]
+                : ["otp","verify","upi","bank","ifsc","payment","transfer","beneficiary"]
           },
           engagementMetrics: {
             totalMessagesExchanged: turn + 2,
@@ -219,12 +233,11 @@ ${phaseInstruction}
               Math.floor((Date.now() - sessionStartTimes.get(sessionId)) / 1000)
           },
           agentNotes:
-            "Scammer engaged via Ramesh persona. Progressive disclosure achieved."
+            "Progressive disclosure with reversal trap achieved."
         };
 
         try {
-
-          const report = await fetch(
+          await fetch(
             "https://hackathon.guvi.in/api/updateHoneyPotFinalResult",
             {
               method: "POST",
@@ -232,14 +245,7 @@ ${phaseInstruction}
               body: JSON.stringify(finalPayload)
             }
           );
-
-          const txt = await report.text();
-          console.log("GUVI REPORT:", txt);
-
-        } catch (err) {
-          console.log("REPORT FAILED:", err.message);
-        }
-
+        } catch {}
       })();
     }
 
@@ -257,5 +263,5 @@ ${phaseInstruction}
 });
 
 app.listen(PORT, "0.0.0.0", () =>
-  console.log(`🚀 Final Honeypot Active on ${PORT}`)
+  console.log(`🚀 Top-1 Honeypot Active on ${PORT}`)
 );
