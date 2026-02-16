@@ -11,20 +11,15 @@ const PORT = process.env.PORT || 8080;
 const AUTH_KEY = process.env.AUTH_KEY || "RAKSHAK_H_2026";
 const API_KEY = process.env.API_KEY;
 
-const processedFinalSessions = new Set();
+// Track sessions to avoid duplicate final reports
+const finalReportsSent = new Set();
 
-// --- HELPER: Language Detector ---
-function detectLanguage(text) {
-  // Simple check: if text contains Hindi characters or common Hinglish words, return Hinglish
-  const hinglishPatterns = /[\u0900-\u097F]|bhaiya|ruko|nahi|acha|theek|kya|hai/i;
-  return hinglishPatterns.test(text) ? "Hinglish" : "English";
-}
-
+// --- AI CALL ENGINE ---
 async function callAI(messages, jsonMode = false) {
   const body = { 
     model: "google/gemini-2.0-flash-001", 
     messages,
-    max_tokens: 200,
+    max_tokens: 250,
     temperature: 0.7 
   };
   if (jsonMode) body.response_format = { type: "json_object" };
@@ -38,28 +33,29 @@ async function callAI(messages, jsonMode = false) {
   return data.choices[0].message.content;
 }
 
+// --- MAIN HONEYPOT API ---
 app.post("/honeypot", async (req, res) => {
   if (req.headers['x-api-key'] !== AUTH_KEY) return res.status(401).json({ status: "error", message: "Unauthorized" });
 
   const { sessionId, message, conversationHistory = [] } = req.body;
   const scammerText = typeof message === 'string' ? message : message.text;
 
-  // 1. Detect Scammer's Language
-  const detectedLang = detectLanguage(scammerText);
+  // 1. Language Mirroring Detection
+  const isHinglish = /[\u0900-\u097F]|bhaiya|ruko|nahi|acha|kya|hai/i.test(scammerText);
+  const targetLang = isHinglish ? "Hinglish (Hindi+English mix)" : "Strict Formal English";
 
   try {
     const aiMessages = [
       { 
         role: "system", 
-        content: `You are Rakshak-H, a scam-honeypot AI agent. 
-        Current Goal: Engage the scammer in ${detectedLang} ONLY. 
-        
-        STRICT RULES:
-        1. LANGUAGE: If the detected language is English, do NOT use Hindi/Hinglish words. If Hinglish, use a mix.
-        2. PERSONA: You are Ramesh, a retired clerk. You are eager to cooperate but tech-illiterate.
-        3. EXTRACTION: Force them to provide a UPI ID or Bank Account by claiming the app/link they sent is not working. 
-        4. REPETITION: Use different excuses. If you used "slow net", now use "low battery" or "app crashing".
-        5. TONE: 1-2 natural sentences. Stay in character as a confused human.` 
+        content: `You are Rakshak-H, an AI Agent honeypot. 
+        Current Context: Scammer is using ${targetLang}. 
+        RULES:
+        1. MIRROR LANGUAGE: You MUST use ${targetLang}. If they are formal, you be formal.
+        2. PERSONA: You are Ramesh, a retired clerk. You are eager but tech-confused.
+        3. EXTRACTION: If they ask for OTP/Payment, make excuses (app error, blurry screen) to force them to give their Name, UPI ID, or Bank details.
+        4. ANTI-REPETITION: Never repeat the same excuse. 
+        5. TONE: 1-3 natural sentences. Do not sound like a bot.` 
       },
       ...conversationHistory.map(h => ({ role: h.sender === "scammer" ? "user" : "assistant", content: h.text })),
       { role: "user", content: scammerText }
@@ -68,39 +64,61 @@ app.post("/honeypot", async (req, res) => {
     let reply = await callAI(aiMessages);
     reply = reply.trim();
 
-    // 2. Intelligence Extraction & GUVI Callback
-    const isStop = /police|bye|stop|done/i.test(scammerText + reply);
-    if ((conversationHistory.length >= 16 || isStop) && !processedFinalSessions.has(sessionId)) {
-      processedFinalSessions.add(sessionId);
+    // --- MANDATORY FINAL CALLBACK LOGIC ---
+    const shouldEnd = /police|bye|stop|done|thank/i.test(scammerText + reply);
+    const turnLimit = conversationHistory.length >= 16; // Engagement depth
+
+    if ((shouldEnd || turnLimit) && !finalReportsSent.has(sessionId)) {
+      finalReportsSent.add(sessionId);
       
-      const intelPrompt = `Extract as JSON: {bankAccounts:[], upiIds:[], phishingLinks:[], phoneNumbers:[], suspiciousKeywords:[], agentNotes:""} from: ${conversationHistory.map(h => h.text).join(" ")} ${scammerText}`;
+      const intelPrompt = `Analyze the chat and return JSON ONLY:
+      {
+        "bankAccounts": [],
+        "upiIds": [],
+        "phishingLinks": [],
+        "phoneNumbers": [],
+        "suspiciousKeywords": [],
+        "agentNotes": ""
+      }
+      Chat: ${conversationHistory.map(h => h.text).join(" ")} ${scammerText}`;
       
       callAI([{ role: "system", content: intelPrompt }], true).then(async (intelRaw) => {
         const intel = JSON.parse(intelRaw);
+        
+        // Final Payload Submission
+        const finalPayload = {
+          sessionId: sessionId,
+          scamDetected: true,
+          totalMessagesExchanged: conversationHistory.length + 2,
+          extractedIntelligence: {
+            bankAccounts: intel.bankAccounts || [],
+            upiIds: intel.upiIds || [],
+            phishingLinks: intel.phishingLinks || [],
+            phoneNumbers: intel.phoneNumbers || [],
+            suspiciousKeywords: intel.suspiciousKeywords || []
+          },
+          agentNotes: intel.agentNotes || "Scammer engaged via Rakshak-H persona."
+        };
+
         await fetch("https://hackathon.guvi.in/api/updateHoneyPotFinalResult", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sessionId,
-            scamDetected: true,
-            totalMessagesExchanged: conversationHistory.length + 2,
-            extractedIntelligence: intel,
-            agentNotes: intel.agentNotes || "Extracted SCAMMER details using Rakshak-H."
-          })
+          body: JSON.stringify(finalPayload)
         });
-      }).catch(e => console.error(e));
+        console.log(`✅ Mandatory callback sent for session ${sessionId}`);
+      }).catch(e => console.error("Callback failed:", e));
     }
 
-    // 3. Official API Response
+    // Standard Turn Response
     return res.status(200).json({
       status: "success",
       reply: reply
     });
 
   } catch (err) {
-    const fallback = detectedLang === "English" ? "Sorry, my phone is acting up, please wait." : "Ruko bhaiya, phone hang ho raha hai.";
+    const fallback = targetLang === "Strict Formal English" ? "One moment please, my screen is flickering." : "Ruko bhaiya, phone hang ho raha hai.";
     return res.status(200).json({ status: "success", reply: fallback });
   }
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Rakshak-H Optimized Running`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Rakshak-H: Final Callback Ready`));
