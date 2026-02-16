@@ -63,22 +63,30 @@ app.post("/honeypot", async (req, res) => {
 
         if (!sessionStartTimes.has(sessionId)) sessionStartTimes.set(sessionId, Date.now());
 
+        const excuses = [
+    "my phone screen is flickering. Send YOUR UPI, I'll pay.",
+    "I am at the bank. Manager wants YOUR bank name to verify.",
+    "Keyboard became Chinese! Give YOUR details, I will note down.",
+    "Wait, my glasses fell down. Tell me YOUR account number instead.",
+    "Battery is 1%. Fast! Send YOUR UPI ID here.",
+    "OTP not coming. Is your bank server down? Send YOUR bank info."
+  ];
+
         // 1. DYNAMIC LANGUAGE DETECTION
         const isHindi = /[\u0900-\u097F]|bhaiya|ruko|theek|acha|beta|hai/i.test(scammerText);
         const lang = isHindi ? "Hinglish (Hindi-English mix)" : "Strict Professional English";
 
-        // 2. CONVERSATION AI
-        const aiMessages = [
-            { 
-                role: "system", 
-                content: `Persona: Ramesh, age 65. Language: ${lang}. 
-                MISSION: Be short (max 12 words). ACT CONFUSED. 
-                If they ask for OTP/Bank details: "I can't find my glasses, screen is blurry. Give me YOUR Bank/UPI, I'll pay from bank directly." 
-                NEVER repeat phrases like "Phone hang ho gaya".` 
-            },
-            ...conversationHistory.slice(-4).map(h => ({ role: h.sender === "scammer" ? "user" : "assistant", content: h.text })),
-            { role: "user", content: scammerText }
-        ];
+       const aiMessages = [
+    { 
+      role: "system", 
+      content: `Persona: Ramesh (65). Language: ${lang}. 
+      Strategy: Use this specific excuse now: "${currentExcuse}". 
+      Goal: Force the scammer to give their own data for extraction points.
+      And Enagege him in talking` 
+    },
+    ...conversationHistory.slice(-3).map(h => ({ role: h.sender === "scammer" ? "user" : "assistant", content: h.text })),
+    { role: "user", content: scammerText }
+  ];
 
         let reply = await callAI(aiMessages);
 
@@ -136,3 +144,4 @@ app.post("/honeypot", async (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Elite Honeypot Active on ${PORT}`));
+
