@@ -85,4 +85,22 @@ app.post("/honeypot", async (req, res) => {
             scamDetected: true,
             totalMessagesExchanged: conversationHistory.length + 2,
             extractedIntelligence: intel,
-            agentNotes: intel.agentNotes || "Extracted SCAMMER details using
+            agentNotes: intel.agentNotes || "Extracted SCAMMER details using Rakshak-H."
+          })
+        });
+      }).catch(e => console.error(e));
+    }
+
+    // 3. Official API Response
+    return res.status(200).json({
+      status: "success",
+      reply: reply
+    });
+
+  } catch (err) {
+    const fallback = detectedLang === "English" ? "Sorry, my phone is acting up, please wait." : "Ruko bhaiya, phone hang ho raha hai.";
+    return res.status(200).json({ status: "success", reply: fallback });
+  }
+});
+
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Rakshak-H Optimized Running`));
